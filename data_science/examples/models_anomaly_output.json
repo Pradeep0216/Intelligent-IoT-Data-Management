@@ -1,0 +1,8 @@
+{
+    "timestamp": "2026-07-29T10:35:00Z",
+    "detector": "IsolationForest",
+    "is_anomaly": true,
+    "anomaly_score": 0.91,
+    "runtime_ms": 24,
+    "threshold": 0.7
+}

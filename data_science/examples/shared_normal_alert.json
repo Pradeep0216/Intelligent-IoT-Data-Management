@@ -1,0 +1,16 @@
+{
+    "timestamp": "2026-07-29T10:30:00Z",
+    "alert_type": "anomaly",
+    "target": {
+        "sensor_id": null
+    },
+    "method": "IsolationForest",
+    "is_anomaly": false,
+    "score": 0.18,
+    "severity": null,
+    "message": null,
+    "supporting_values": {
+        "runtime_ms": 21,
+        "threshold": 0.7
+    }
+}

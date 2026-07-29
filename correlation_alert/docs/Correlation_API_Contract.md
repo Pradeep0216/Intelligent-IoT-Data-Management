@@ -28,41 +28,131 @@ Analytics Integration team.
 
 ## 3. Request Parameters
 
-  Parameter          Type       Example
-  ------------------ ---------- ------------
-  file               CSV File   simple.csv
-  selected_streams   String     s1,s2,s3
-  window_size        Integer    20
-  step_size          Integer    10
-  method             String     pearson
+| Parameter | Type | Example | Description |
+|-----------|------|---------|-------------|
+| file | CSV File | simple.csv | CSV dataset uploaded for processing. |
+| selected_streams | String | s1,s2,s3 | Sensor streams to analyse. |
+| window_size | Integer | 20 | Sliding window size used for correlation calculation. |
+| step_size | Integer | 10 | Sliding window step size. |
+| method | String | pearson | Correlation method used. |
+| timestamp_col | String | time | Name of the timestamp column in the uploaded dataset. |
 
 ## 4. Response Structure
 
-Top-level JSON response fields returned by the API are: - status -
-alerts - changes - summary
+Top-level JSON response fields returned by the API are:
 
-  -----------------------------------------------------------------------
-  Field             Type              Example           Meaning
-  ----------------- ----------------- ----------------- -----------------
-  status            String            success           Indicates request
-                                                        completed
-                                                        successfully.
+- status
+- correlations
+- alerts
+- changes
+- summary
 
-  alerts            Array             \[...\]           Detected
-                                                        correlation
-                                                        alerts.
+| Field | Type | Example | Meaning |
+|------|------|---------|---------|
+| status | String | success | Indicates request completed successfully. |
+| correlations | Array | [{...}] | Correlation results for each sliding window. |
+| alerts | Array | [{...}] | Detected correlation alerts. |
+| changes | Array | [{...}] | Correlation changes calculated for sliding windows. |
+| summary | Object | {...} | Overall processing statistics. |
 
-  changes           Array             \[...\]           Correlation
-                                                        changes
-                                                        calculated for
-                                                        sliding windows.
+---
 
-  summary           Object            {...}             Overall
-                                                        processing
-                                                        statistics.
-  -----------------------------------------------------------------------
+## 5. Changes Object
+Each item in the `changes` array contains the following fields.
 
-## 5. API Testing Evidence
+| Field | Type | Description |
+|------|------|-------------|
+| window_index | Integer | Sliding window index where the correlation change was detected. |
+| start_time | String | Start timestamp of the sliding window. |
+| end_time | String | End timestamp of the sliding window. |
+| stream_1 | String | First sensor stream. |
+| stream_2 | String | Second sensor stream. |
+| previous_corr | Float | Correlation value before the detected change. |
+| current_corr | Float | Correlation value after the detected change. |
+| delta | Float | Absolute difference between previous and current correlation values. |
+
+---
+
+## 6. Alerts Object
+Each item in the `alerts` array contains the following fields.
+
+| Field | Type | Description |
+|------|------|-------------|
+| window_index | Integer | Sliding window index. |
+| start_time | String | Start timestamp of the sliding window. |
+| end_time | String | End timestamp of the sliding window. |
+| stream_1 | String | First sensor stream. |
+| stream_2 | String | Second sensor stream. |
+| previous_corr | Float | Previous correlation value. |
+| current_corr | Float | Current correlation value. |
+| delta | Float | Correlation difference. |
+| alert_level | String | Alert severity (LOW, MEDIUM, HIGH). |
+| reason | String | Explanation describing why the alert was generated. |
+
+---
+
+## 7. Correlation Configuration
+The API currently supports the following configuration parameters.
+
+| Parameter | Description |
+|----------|-------------|
+| method | Correlation method used for calculation. Current implementation supports **pearson**. |
+| window_size | Number of records included in each sliding window. |
+| step_size | Number of records the sliding window advances between calculations. |
+
+---
+
+## 8. Supported Severity Values
+Current implementation supports the following alert severity levels.
+
+| Severity | Description |
+|---------|-------------|
+| LOW | Small but significant correlation change. |
+| MEDIUM | Moderate correlation change or strong-to-weak / weak-to-strong transition. |
+| HIGH | Large correlation change requiring immediate attention. |
+
+---
+
+## 9. Required and Optional Fields
+### Required Request Parameters
+
+- file
+- timestamp_col
+- selected_streams
+
+### Optional Request Parameters
+
+- window_size (default value applied if omitted)
+- step_size (default value applied if omitted)
+- method (defaults to pearson)
+
+### Optional Response Fields
+
+- start_time
+- end_time
+
+These fields are generated when timestamp information is available in the uploaded dataset.
+
+---
+
+## 10. Error Response
+Example error response:
+
+```json
+{
+  "status": "error",
+  "message": "Missing 'timestamp_col'."
+}
+```
+
+Possible causes include:
+
+- Missing timestamp_col
+- Missing selected_streams
+- Missing uploaded dataset
+- Unexpected server error
+
+## 11. API Testing Evidence
 
 The Correlation Alert API was tested locally after setting up the
 project environment. Both required endpoints were executed successfully

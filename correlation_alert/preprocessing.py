@@ -15,14 +15,47 @@ def load_sensor_data(filepath: str = "datasets/complex.csv") -> pd.DataFrame:
 
 
 def fix_timestamps(df: pd.DataFrame, time_col: str = "time") -> pd.DataFrame:
+    """Clean and sort the time column.
+
+    Accepts numeric counters (datasets/complex.csv), ISO 8601 strings (the
+    NAB datasets) and ThingSpeak created_at values ending in Z. The previous
+    version forced pd.to_numeric, so any non numeric timestamp became NaN,
+    every row was dropped, and validate_output still reported the empty
+    result as clean and ready. Tests in testing/test_preprocess_timestamps.py.
+
+    A column counts as numeric only when at least half its values parse as
+    numbers. Otherwise it is parsed as a datetime and normalised to UTC
+    without a timezone, so the rest of the pipeline keeps working on naive
+    datetimes.
+    """
     df = df.copy()
 
-    df[time_col] = pd.to_numeric(df[time_col], errors="coerce")
-    invalid_time = df[time_col].isna().sum()
+    numeric = pd.to_numeric(df[time_col], errors="coerce")
+    numeric_share = numeric.notna().sum() / len(df) if len(df) else 0.0
+
+    if numeric_share >= 0.5:
+        parsed = numeric
+        detected = "numeric"
+    else:
+        parsed = pd.to_datetime(df[time_col], errors="coerce", utc=True, format="mixed")
+        if parsed.notna().any():
+            parsed = parsed.dt.tz_convert("UTC").dt.tz_localize(None)
+        detected = "datetime"
+
+    invalid_time = parsed.isna().sum()
     if invalid_time > 0:
         print(f"[TIMESTAMPS] Removed {invalid_time} rows with invalid time values")
 
+    df[time_col] = parsed
     df = df.dropna(subset=[time_col])
+
+    if df.empty:
+        raise ValueError(
+            f"No usable timestamps left in column '{time_col}'. "
+            f"Detected format: {detected}. "
+            "Check that the column holds numeric counters, ISO 8601 strings, "
+            "or ThingSpeak created_at values."
+        )
 
     duplicate_count = df.duplicated(subset=[time_col]).sum()
     if duplicate_count > 0:
@@ -31,7 +64,10 @@ def fix_timestamps(df: pd.DataFrame, time_col: str = "time") -> pd.DataFrame:
     df = df.drop_duplicates(subset=[time_col])
     df = df.sort_values(by=time_col).reset_index(drop=True)
 
-    print(f"[TIMESTAMPS] Sorted by '{time_col}'")
+    print(
+        f"[TIMESTAMPS] Sorted by '{time_col}', "
+        f"detected {detected}, kept {len(df)} rows"
+    )
     return df
 
 
@@ -96,20 +132,33 @@ def remove_outliers(df: pd.DataFrame, sensor_cols: list, iqr_factor: float = 3.0
     return df
 
 
-def align_to_common_index(df: pd.DataFrame, time_col: str = "time", freq: int = 1) -> pd.DataFrame:
+def align_to_common_index(df: pd.DataFrame, time_col: str = "time", freq=1) -> pd.DataFrame:
+    """Resample onto a regular grid.
+
+    Handles both shapes fix_timestamps produces: numeric counters, where freq
+    is an integer step, and datetimes, where freq is an offset string such as
+    "5min".
+    """
     df = df.copy()
     df = df.set_index(time_col)
 
-    start_time = int(df.index.min())
-    end_time = int(df.index.max())
+    if pd.api.types.is_datetime64_any_dtype(df.index):
+        if isinstance(freq, int):
+            freq = "5min"
+        full_time_index = pd.date_range(
+            start=df.index.min(), end=df.index.max(), freq=freq
+        )
+    else:
+        start_time = int(df.index.min())
+        end_time = int(df.index.max())
+        full_time_index = range(start_time, end_time + 1, int(freq))
 
-    full_time_index = range(start_time, end_time + 1, freq)
     df = df.reindex(full_time_index)
 
     df = df.interpolate(method="linear", limit_direction="both")
     df = df.reset_index().rename(columns={"index": time_col})
 
-    print(f"[ALIGN] Reindexed time from {start_time} to {end_time} with freq={freq}")
+    print(f"[ALIGN] Reindexed time from {df[time_col].min()} to {df[time_col].max()} with freq={freq}")
     print(f"[ALIGN] Output rows after alignment: {len(df)}")
     return df
 

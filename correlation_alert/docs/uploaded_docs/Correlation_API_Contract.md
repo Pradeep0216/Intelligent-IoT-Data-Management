@@ -173,7 +173,7 @@ results.
 
 ![Flask Server Terminal](evidence/flask_server_terminal.png)
 
-## 6. Alert Object Fields
+## 12. Alert Object Fields
 
   Field           Type      Example                  Description
   --------------- --------- ------------------------ ---------------------------------------
@@ -188,7 +188,7 @@ results.
   end_time        String    Timestamp                Window end time
   reason          String    Correlation changed...   Reason for alert
 
-## 7. Summary Object
+## 13. Summary Object
 
   Field                 Observed Value
   --------------------- ----------------
@@ -198,12 +198,12 @@ results.
   windows               99
   correlation_results   99
 
-## 8. Sample JSON Response (Excerpt)
+## 14. Sample JSON Response (Excerpt)
 
 { "status": "success", "summary": { "alerts": 16, "changes": 294,
 "correlation_results": 99, "processed_rows": 1008, "windows": 99 } }
 
-## 9. Integration Notes
+## 15. Integration Notes
 
 Verify the status field before processing results.
 
@@ -215,7 +215,7 @@ Summary provides overall processing statistics.
 
 Client applications should handle empty alerts arrays gracefully.
 
-## 10. Questions for Analytics Integration Team
+## 16. Questions for Analytics Integration Team
 
 Should every alert include a unique alert_id?
 
@@ -226,7 +226,7 @@ What is the intended difference between correlation_results and windows?
 
 Should error responses follow a standard JSON schema?
 
-## 11. Setup Issues & Fix
+## 17. Setup Issues & Fix
 
 Issue: While testing the POST /detect-correlation-alert endpoint in
 Postman, the request initially returned HTTP 415 Unsupported Media Type

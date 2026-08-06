@@ -13,6 +13,58 @@ from preprocessing import (
 
 from typing import List, Dict, Any, Optional
 
+
+def to_iso8601(value):
+    """Render a window timestamp the way Contract v1 requires.
+
+    Contract v1 says every start_time and end_time is an ISO 8601 UTC string
+    ending in Z, for example 2015-09-01T21:05:00Z.
+
+    Three different shapes used to reach the client from a single response.
+    Alerts and changes carried raw pandas Timestamps, so Flask serialised them
+    as RFC 1123 (Tue, 01 Sep 2015 21:05:00 GMT). Correlations went through
+    str(), giving 2015-09-01 21:05:00 with no T and no Z. Numeric datasets
+    produced 1970 epoch values. This is the single place that decides.
+
+    Numeric time columns have no real date, so they pass through unchanged
+    rather than being dressed up as a 1970 timestamp.
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+
+    timestamp = pd.Timestamp(value)
+
+    if pd.isna(timestamp):
+        return None
+
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_convert("UTC").tz_localize(None)
+
+    return timestamp.isoformat() + "Z"
+
+
+TIME_FIELDS = ("start_time", "end_time")
+
+
+def with_iso_timestamps(records):
+    """Apply the Contract v1 timestamp format to a list of alerts or changes.
+
+    Lives here rather than in server.py because it is a plain data transform
+    with no Flask involvement, and putting it here keeps the test suite
+    runnable without flask installed.
+    """
+    return [
+        {
+            key: to_iso8601(value) if key in TIME_FIELDS else value
+            for key, value in record.items()
+        }
+        for record in records
+    ]
+
+
 def preprocess_timeseries(df, timestamp_col, selected_streams):
     """
     Preprocess selected time-series sensor streams before correlation analysis.

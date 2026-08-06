@@ -79,8 +79,8 @@ Each item in the `alerts` array contains the following fields.
 | Field | Type | Description |
 |------|------|-------------|
 | window_index | Integer | Sliding window index. |
-| start_time | String | Start timestamp of the sliding window. |
-| end_time | String | End timestamp of the sliding window. |
+| start_time | String | Start timestamp of the sliding window. ISO 8601 UTC ending in Z, for example `2015-09-01T21:05:00Z`. Datasets whose time column is a plain row counter return that number unchanged instead of a date. |
+| end_time | String | End timestamp of the sliding window. Same format as start_time. |
 | stream_1 | String | First sensor stream. |
 | stream_2 | String | Second sensor stream. |
 | previous_corr | Float | Previous correlation value. |
@@ -173,7 +173,7 @@ results.
 
 ![Flask Server Terminal](evidence/flask_server_terminal.png)
 
-## 6. Alert Object Fields
+## 12. Alert Object Fields
 
   Field           Type      Example                  Description
   --------------- --------- ------------------------ ---------------------------------------
@@ -184,11 +184,15 @@ results.
   current_corr    Number    0.6852                   Current correlation value
   delta           Number    1.6319                   Difference between correlation values
   window_index    Integer   15                       Sliding window index
-  start_time      String    Timestamp                Window start time
-  end_time        String    Timestamp                Window end time
+  start_time      String    2015-09-01T21:05:00Z     Window start time, ISO 8601 UTC
+  end_time        String    2015-09-02T06:30:00Z     Window end time, ISO 8601 UTC
   reason          String    Correlation changed...   Reason for alert
 
-## 7. Summary Object
+The alert object carries exactly the ten fields above. It does not include
+method, window_size or step_size. Those are request parameters and are echoed
+back in the correlations array, not on each alert.
+
+## 13. Summary Object
 
   Field                 Observed Value
   --------------------- ----------------
@@ -198,12 +202,12 @@ results.
   windows               99
   correlation_results   99
 
-## 8. Sample JSON Response (Excerpt)
+## 14. Sample JSON Response (Excerpt)
 
 { "status": "success", "summary": { "alerts": 16, "changes": 294,
 "correlation_results": 99, "processed_rows": 1008, "windows": 99 } }
 
-## 9. Integration Notes
+## 15. Integration Notes
 
 Verify the status field before processing results.
 
@@ -215,18 +219,21 @@ Summary provides overall processing statistics.
 
 Client applications should handle empty alerts arrays gracefully.
 
-## 10. Questions for Analytics Integration Team
+## 16. Questions for Analytics Integration Team
 
 Should every alert include a unique alert_id?
 
 Why are start_time and end_time shown as placeholder timestamps in the
-current response?
+current response? Answered. The time column was forced through
+pd.to_numeric, so any real date became NaN. Datasets with real timestamps
+now return ISO 8601 UTC. A dataset whose time column is a plain row counter
+still has no date to report and returns the counter value.
 
 What is the intended difference between correlation_results and windows?
 
 Should error responses follow a standard JSON schema?
 
-## 11. Setup Issues & Fix
+## 17. Setup Issues & Fix
 
 Issue: While testing the POST /detect-correlation-alert endpoint in
 Postman, the request initially returned HTTP 415 Unsupported Media Type

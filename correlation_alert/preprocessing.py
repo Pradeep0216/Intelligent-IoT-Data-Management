@@ -22,6 +22,19 @@ def load_sensor_data(filepath: str = "datasets/complex.csv") -> pd.DataFrame:
 
 
 def fix_timestamps(df: pd.DataFrame, time_col: str = "time") -> pd.DataFrame:
+    """Clean and sort the time column.
+
+    Accepts numeric counters (datasets/complex.csv), ISO 8601 strings (the
+    NAB datasets) and ThingSpeak created_at values ending in Z. The previous
+    version forced pd.to_numeric, so any non numeric timestamp became NaN,
+    every row was dropped, and validate_output still reported the empty
+    result as clean and ready. Tests in testing/test_preprocess_timestamps.py.
+
+    Both readings are attempted and the datetime one only wins when it parses
+    strictly more rows. A plain row counter parses as epoch nanoseconds, so a
+    tie means the column is a counter. Datetimes are normalised to UTC and the
+    timezone is dropped, so the pipeline never compares aware against naive.
+    """
     df = df.copy()
     total_rows = len(df)
     original = df[time_col]
@@ -29,20 +42,26 @@ def fix_timestamps(df: pd.DataFrame, time_col: str = "time") -> pd.DataFrame:
     # CCA112 fix (CCA109 Defect 1): try datetime parsing first, fall back to
     # numeric. Previously this column was always coerced with pd.to_numeric,
     # so every datetime string became NaN and every row was dropped.
-    parsed_datetime = pd.to_datetime(original, errors="coerce", format="mixed")
+    parsed_datetime = pd.to_datetime(original, errors="coerce", utc=True, format="mixed")
+    if parsed_datetime.notna().any():
+        parsed_datetime = parsed_datetime.dt.tz_convert("UTC").dt.tz_localize(None)
     datetime_valid = int(parsed_datetime.notna().sum())
 
     parsed_numeric = pd.to_numeric(original, errors="coerce")
     numeric_valid = int(parsed_numeric.notna().sum())
 
-    if datetime_valid > 0 and datetime_valid >= numeric_valid:
+    # Strictly greater. A plain row counter parses as epoch nanoseconds, so every
+    # row is "valid" as a date and a tie would send a counter down the datetime
+    # branch. On a tie the counter reading is the correct one.
+    if datetime_valid > 0 and datetime_valid > numeric_valid:
         df[time_col] = parsed_datetime
-        print(f"[TIMESTAMPS] Parsed '{time_col}' as datetime "
-              f"({datetime_valid}/{total_rows} rows valid)")
+        detected, valid = "datetime", datetime_valid
     else:
         df[time_col] = parsed_numeric
-        print(f"[TIMESTAMPS] Parsed '{time_col}' as numeric "
-              f"({numeric_valid}/{total_rows} rows valid)")
+        detected, valid = "numeric", numeric_valid
+
+    print(f"[TIMESTAMPS] Parsed '{time_col}' as {detected} "
+          f"({valid}/{total_rows} rows valid)")
 
     invalid_time = int(df[time_col].isna().sum())
     if invalid_time > 0:
@@ -59,14 +78,16 @@ def fix_timestamps(df: pd.DataFrame, time_col: str = "time") -> pd.DataFrame:
     df = df.sort_values(by=time_col).reset_index(drop=True)
 
     # CCA112 fix (CCA109 Defect 2): an empty result is an error, not success.
+    # InputValidationError so server.py answers 400 rather than 500.
     if len(df) == 0:
         raise InputValidationError(
-            f"All {total_rows} rows were removed because the '{time_col}' column "
-            f"could not be parsed as a timestamp. Check the timestamp format and "
-            f"that 'timestamp_col' names the correct column."
+            f"No usable timestamps left in column '{time_col}'. All {total_rows} "
+            f"rows were removed. Detected format: {detected}. Check that the column "
+            "holds numeric counters, ISO 8601 strings, or ThingSpeak created_at values."
         )
 
-    print(f"[TIMESTAMPS] Sorted by '{time_col}'")
+    print(f"[TIMESTAMPS] Sorted by '{time_col}', "
+          f"detected {detected}, kept {len(df)} rows")
     return df
 
 
@@ -148,20 +169,38 @@ def remove_outliers(df: pd.DataFrame, sensor_cols: list, iqr_factor: float = 3.0
     return df
 
 
-def align_to_common_index(df: pd.DataFrame, time_col: str = "time", freq: int = 1) -> pd.DataFrame:
+def align_to_common_index(df: pd.DataFrame, time_col: str = "time", freq=1) -> pd.DataFrame:
+    """Resample onto a regular grid.
+
+    Handles both shapes fix_timestamps produces: numeric counters, where freq
+    is an integer step, and datetimes, where freq is an offset string such as
+    "5min".
+    """
     df = df.copy()
     df = df.set_index(time_col)
 
-    start_time = int(df.index.min())
-    end_time = int(df.index.max())
+    if pd.api.types.is_datetime64_any_dtype(df.index):
+        if isinstance(freq, int):
+            freq = "5min"
+            print(
+                "[ALIGN] Datetime index with an integer freq. Falling back to "
+                "'5min', which matches the NAB realTraffic sampling rate. Pass "
+                "an offset string such as '1min' for a differently sampled feed."
+            )
+        full_time_index = pd.date_range(
+            start=df.index.min(), end=df.index.max(), freq=freq
+        )
+    else:
+        start_time = int(df.index.min())
+        end_time = int(df.index.max())
+        full_time_index = range(start_time, end_time + 1, int(freq))
 
-    full_time_index = range(start_time, end_time + 1, freq)
     df = df.reindex(full_time_index)
 
     df = df.interpolate(method="linear", limit_direction="both")
     df = df.reset_index().rename(columns={"index": time_col})
 
-    print(f"[ALIGN] Reindexed time from {start_time} to {end_time} with freq={freq}")
+    print(f"[ALIGN] Reindexed time from {df[time_col].min()} to {df[time_col].max()} with freq={freq}")
     print(f"[ALIGN] Output rows after alignment: {len(df)}")
     return df
 

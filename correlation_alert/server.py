@@ -3,6 +3,7 @@ from flask_cors import CORS
 import pandas as pd
 
 from main import detect_correlation_change_alert as run_correlation_pipeline
+from main import to_iso8601, with_iso_timestamps
 from preprocessing import InputValidationError
 
 app = Flask(__name__)
@@ -77,8 +78,8 @@ def detect_correlation_alert_api():
         for item in result["correlation_results"]:
             correlations.append({
                 "window_index": item["window_index"],
-                "start_time": str(item["start_time"]),
-                "end_time": str(item["end_time"]),
+                "start_time": to_iso8601(item["start_time"]),
+                "end_time": to_iso8601(item["end_time"]),
                 "window_size": item["window_size"],
                 "correlation_matrix": item["correlation_matrix"].round(4).to_dict()
             })
@@ -97,8 +98,8 @@ def detect_correlation_alert_api():
                 "missing_values_imputed": data_quality.get("missing_imputed", 0)
             },
             "correlations": correlations,
-            "alerts": alerts,
-            "changes": changes
+            "alerts": with_iso_timestamps(alerts),
+            "changes": with_iso_timestamps(changes)
         }
 
         return jsonify(response), 200

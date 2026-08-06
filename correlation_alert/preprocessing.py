@@ -2,6 +2,13 @@ import pandas as pd
 import numpy as np
 
 
+class InputValidationError(ValueError):
+    """Raised when the caller's input is invalid (bad columns, unusable data).
+
+    Kept separate from internal errors so the API can answer 400 instead of 500.
+    """
+    pass
+
 def load_sensor_data(filepath: str = "datasets/complex.csv") -> pd.DataFrame:
     df = pd.read_csv(filepath)
     df.columns = df.columns.str.strip()
@@ -16,20 +23,48 @@ def load_sensor_data(filepath: str = "datasets/complex.csv") -> pd.DataFrame:
 
 def fix_timestamps(df: pd.DataFrame, time_col: str = "time") -> pd.DataFrame:
     df = df.copy()
+    total_rows = len(df)
+    original = df[time_col]
 
-    df[time_col] = pd.to_numeric(df[time_col], errors="coerce")
-    invalid_time = df[time_col].isna().sum()
+    # CCA112 fix (CCA109 Defect 1): try datetime parsing first, fall back to
+    # numeric. Previously this column was always coerced with pd.to_numeric,
+    # so every datetime string became NaN and every row was dropped.
+    parsed_datetime = pd.to_datetime(original, errors="coerce", format="mixed")
+    datetime_valid = int(parsed_datetime.notna().sum())
+
+    parsed_numeric = pd.to_numeric(original, errors="coerce")
+    numeric_valid = int(parsed_numeric.notna().sum())
+
+    if datetime_valid > 0 and datetime_valid >= numeric_valid:
+        df[time_col] = parsed_datetime
+        print(f"[TIMESTAMPS] Parsed '{time_col}' as datetime "
+              f"({datetime_valid}/{total_rows} rows valid)")
+    else:
+        df[time_col] = parsed_numeric
+        print(f"[TIMESTAMPS] Parsed '{time_col}' as numeric "
+              f"({numeric_valid}/{total_rows} rows valid)")
+
+    invalid_time = int(df[time_col].isna().sum())
     if invalid_time > 0:
         print(f"[TIMESTAMPS] Removed {invalid_time} rows with invalid time values")
 
     df = df.dropna(subset=[time_col])
 
-    duplicate_count = df.duplicated(subset=[time_col]).sum()
+    duplicate_count = int(df.duplicated(subset=[time_col]).sum())
     if duplicate_count > 0:
-        print(f"[TIMESTAMPS] Removed {duplicate_count} duplicate timestamps")
+        print(f"[TIMESTAMPS] Removed {duplicate_count} duplicate timestamps "
+              f"(keeping first occurrence)")
 
     df = df.drop_duplicates(subset=[time_col])
     df = df.sort_values(by=time_col).reset_index(drop=True)
+
+    # CCA112 fix (CCA109 Defect 2): an empty result is an error, not success.
+    if len(df) == 0:
+        raise InputValidationError(
+            f"All {total_rows} rows were removed because the '{time_col}' column "
+            f"could not be parsed as a timestamp. Check the timestamp format and "
+            f"that 'timestamp_col' names the correct column."
+        )
 
     print(f"[TIMESTAMPS] Sorted by '{time_col}'")
     return df
@@ -39,12 +74,29 @@ def convert_sensor_columns_to_numeric(df: pd.DataFrame, time_col: str = "time") 
     df = df.copy()
     sensor_cols = [col for col in df.columns if col != time_col]
 
+    # CCA112 fix (CCA109 Defect 4): count text values coerced to NaN so they are
+    # reported separately from values that were genuinely missing on arrival.
+    coerced_total = 0
+    coerced_by_col = {}
+
     for col in sensor_cols:
+        before_na = int(df[col].isna().sum())
         df[col] = pd.to_numeric(df[col], errors="coerce")
+        after_na = int(df[col].isna().sum())
+
+        coerced = after_na - before_na
+        if coerced > 0:
+            coerced_by_col[col] = coerced
+            coerced_total += coerced
 
     print(f"[NUMERIC] Converted sensor columns to numeric: {sensor_cols}")
-    return df
+    if coerced_total > 0:
+        print(f"[NUMERIC] Coerced {coerced_total} non-numeric value(s) to NaN: "
+              f"{coerced_by_col}")
 
+    df.attrs["non_numeric_coerced"] = coerced_total
+    df.attrs["non_numeric_by_column"] = coerced_by_col
+    return df
 
 def handle_missing_values(df: pd.DataFrame, method: str = "interpolate") -> pd.DataFrame:
     df = df.copy()

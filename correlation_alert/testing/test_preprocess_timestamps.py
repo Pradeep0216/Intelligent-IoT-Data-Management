@@ -14,7 +14,12 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from main import detect_correlation_change_alert, preprocess_timeseries  # noqa: E402
+from main import (  # noqa: E402
+    detect_correlation_change_alert,
+    preprocess_timeseries,
+    to_iso8601,
+    with_iso_timestamps,
+)
 from preprocessing import fix_timestamps  # noqa: E402
 
 DATA = os.path.join(
@@ -85,6 +90,51 @@ def test_unparseable_column_raises_instead_of_emptying():
     df = pd.DataFrame({"timestamp": ["nope", "still nope"], "s1": [1.0, 2.0]})
     with pytest.raises(ValueError, match="No usable timestamps"):
         fix_timestamps(df, "timestamp")
+
+
+def test_mostly_dates_with_some_numbers_picks_datetime():
+    """Boundary on the numeric_share >= 0.5 rule.
+
+    Two of five values parse as numbers, so the share is 0.4 and the column
+    must be read as dates. If the rule ever flips, the three real dates become
+    NaN and get dropped, which is the original defect in miniature.
+    """
+    df = pd.DataFrame(
+        {
+            "timestamp": [
+                "2015-09-01 13:40:00",
+                "2015-09-01 13:45:00",
+                "2015-09-01 13:50:00",
+                "1",
+                "2",
+            ],
+            "s1": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+    out = fix_timestamps(df, "timestamp")
+    assert len(out) == 3
+    assert pd.api.types.is_datetime64_any_dtype(out["timestamp"])
+
+
+def test_iso8601_serialiser_matches_contract_v1():
+    """Contract v1 pins ISO 8601 UTC with a trailing Z."""
+    assert to_iso8601(pd.Timestamp("2015-09-01 21:05:00")) == "2015-09-01T21:05:00Z"
+    assert to_iso8601(pd.Timestamp("2015-09-01 21:05:00", tz="UTC")) == "2015-09-01T21:05:00Z"
+    assert to_iso8601(None) is None
+    # A numeric time column has no real date, so it must not become a 1970 value.
+    assert to_iso8601(150) == 150
+
+
+def test_api_layer_does_not_emit_rfc_1123():
+    """Flask serialises a bare pandas Timestamp as 'Tue, 01 Sep 2015 ... GMT'.
+
+    with_iso_timestamps has to run before jsonify sees the payload.
+    """
+    records = [{"start_time": pd.Timestamp("2015-09-01 21:05:00"), "delta": 0.35}]
+    out = with_iso_timestamps(records)
+    assert out[0]["start_time"] == "2015-09-01T21:05:00Z"
+    assert "GMT" not in out[0]["start_time"]
+    assert out[0]["delta"] == 0.35
 
 
 @needs_data

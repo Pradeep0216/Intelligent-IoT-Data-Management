@@ -145,6 +145,11 @@ def align_to_common_index(df: pd.DataFrame, time_col: str = "time", freq=1) -> p
     if pd.api.types.is_datetime64_any_dtype(df.index):
         if isinstance(freq, int):
             freq = "5min"
+            print(
+                "[ALIGN] Datetime index with an integer freq. Falling back to "
+                "'5min', which matches the NAB realTraffic sampling rate. Pass "
+                "an offset string such as '1min' for a differently sampled feed."
+            )
         full_time_index = pd.date_range(
             start=df.index.min(), end=df.index.max(), freq=freq
         )

@@ -1,7 +1,7 @@
 CCA116, correlation pipeline run over the shared datasets
 ====================================================================
-Generated 2026-08-04T09:15:42.744124+00:00Z
-pandas 2.3.3, numpy 2.2.6
+Generated 2026-08-06T00:15:28.241714Z
+pandas 2.3.3, numpy 2.3.5
 window_size=30, step_size=5, method=pearson
 
 traffic_4stream_merged.csv, primary
@@ -11,7 +11,7 @@ traffic_4stream_merged.csv, primary
   alerts           77
   alerts/comparison0.0353
   by severity      {'LOW': 72, 'MEDIUM': 5}
-  runtime          0.059 s
+  runtime          0.053 s
 
 aws_control_merged.csv, negative control
   rows kept        4024
@@ -20,7 +20,7 @@ aws_control_merged.csv, negative control
   alerts           47
   alerts/comparison0.0196
   by severity      {'LOW': 40, 'MEDIUM': 5, 'HIGH': 2}
-  runtime          0.095 s
+  runtime          0.064 s
 
 False positive review
 --------------------------------------------------------------------
@@ -53,17 +53,14 @@ Outlier removal against NAB ground truth
 Sample alert, Contract v1 shape
 --------------------------------------------------------------------
 {
-  "alert_level": "LOW",
+  "window_index": 4,
+  "start_time": "2015-09-01T21:05:00Z",
+  "end_time": "2015-09-02T06:30:00Z",
   "stream_1": "speed_t4013",
   "stream_2": "occupancy_6005",
   "previous_corr": 0.2998,
   "current_corr": -0.0566,
   "delta": 0.3565,
-  "window_index": 4,
-  "start_time": "2015-09-01T21:05:00Z",
-  "end_time": "2015-09-02T06:30:00Z",
-  "reason": "Correlation changed by 0.36, classified as LOW severity",
-  "method": "pearson",
-  "window_size": 30,
-  "step_size": 5
+  "alert_level": "LOW",
+  "reason": "Correlation changed by 0.36, classified as LOW severity"
 }

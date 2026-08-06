@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from main import detect_correlation_change_alert  # noqa: E402
+from main import detect_correlation_change_alert, to_iso8601  # noqa: E402
 
 SERVICE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(os.path.dirname(SERVICE_ROOT), "datasets", "nab_realtraffic")
@@ -63,7 +63,7 @@ def main():
 
     out("CCA116, correlation pipeline run over the shared datasets")
     out("=" * 68)
-    out(f"Generated {pd.Timestamp.utcnow().isoformat()}Z")
+    out(f"Generated {to_iso8601(pd.Timestamp.now(tz='UTC'))}")
     out(f"pandas {pd.__version__}, numpy {np.__version__}")
     out(f"window_size={WINDOW}, step_size={STEP}, method={METHOD}")
     out()
@@ -123,21 +123,14 @@ def main():
     out("  detect. No accuracy number can be trusted until this is settled.")
     out()
 
+    # The sample must be exactly what the API puts on the wire. It used to add
+    # method, window_size and step_size, which the alert object does not carry
+    # in Contract v1 sections 6 and 12, and it formatted the timestamps by hand
+    # instead of going through the shared serialiser.
     alert = primary["alerts"][0]
     sample = {
-        "alert_level": alert["alert_level"],
-        "stream_1": alert["stream_1"],
-        "stream_2": alert["stream_2"],
-        "previous_corr": alert["previous_corr"],
-        "current_corr": alert["current_corr"],
-        "delta": alert["delta"],
-        "window_index": alert["window_index"],
-        "start_time": pd.Timestamp(alert["start_time"]).isoformat() + "Z",
-        "end_time": pd.Timestamp(alert["end_time"]).isoformat() + "Z",
-        "reason": alert["reason"],
-        "method": METHOD,
-        "window_size": WINDOW,
-        "step_size": STEP,
+        key: to_iso8601(value) if key in ("start_time", "end_time") else value
+        for key, value in alert.items()
     }
     with open(os.path.join(EVIDENCE_DIR, "sample_alert_contract_v1.json"), "w") as f:
         json.dump(sample, f, indent=2)

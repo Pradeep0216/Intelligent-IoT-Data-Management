@@ -4,6 +4,7 @@ import pandas as pd
 
 from main import detect_correlation_change_alert as run_correlation_pipeline
 from main import to_iso8601, with_iso_timestamps
+from preprocessing import InputValidationError
 
 app = Flask(__name__)
 CORS(app)
@@ -83,6 +84,8 @@ def detect_correlation_alert_api():
                 "correlation_matrix": item["correlation_matrix"].round(4).to_dict()
             })
 
+        data_quality = result.get("data_quality", {})
+
         response = {
             "status": "success",
             "summary": {
@@ -90,7 +93,9 @@ def detect_correlation_alert_api():
                 "windows": len(result["windows"]),
                 "correlation_results": len(result["correlation_results"]),
                 "changes": len(changes),
-                "alerts": len(alerts)
+                "alerts": len(alerts),
+                "non_numeric_values_coerced": data_quality.get("non_numeric_coerced", 0),
+                "missing_values_imputed": data_quality.get("missing_imputed", 0)
             },
             "correlations": correlations,
             "alerts": with_iso_timestamps(alerts),
@@ -99,9 +104,18 @@ def detect_correlation_alert_api():
 
         return jsonify(response), 200
 
+    # CCA112 fix (CCA109 Defect 3): bad caller input is a 400, not a 500.
+    except InputValidationError as e:
+        return jsonify({
+            "status": "error",
+            "error_type": "invalid_input",
+            "message": str(e)
+        }), 400
+
     except Exception as e:
         return jsonify({
             "status": "error",
+            "error_type": "internal_error",
             "message": str(e)
         }), 500
 

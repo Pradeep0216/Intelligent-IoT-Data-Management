@@ -3,6 +3,7 @@ import numpy as np
 from itertools import combinations
 
 from preprocessing import (
+    InputValidationError,
     fix_timestamps,
     convert_sensor_columns_to_numeric,
     handle_missing_values,
@@ -76,6 +77,30 @@ def preprocess_timeseries(df, timestamp_col, selected_streams):
     correlation calculation, comparison, or alert generation.
     """
 
+    # CCA112 fix (CCA109 Defect 3): validate the requested columns before
+    # slicing, so a missing or renamed column returns a clear 400 instead of a
+    # bare KeyError 500.
+    available = list(df.columns)
+
+    if timestamp_col not in available:
+        raise InputValidationError(
+            f"Timestamp column '{timestamp_col}' not found in the uploaded file. "
+            f"Available columns: {available}"
+        )
+
+    missing_streams = [c for c in selected_streams if c not in available]
+    if missing_streams:
+        raise InputValidationError(
+            f"Requested stream(s) not found in the uploaded file: {missing_streams}. "
+            f"Available columns: {available}"
+        )
+
+    if len(selected_streams) < 2:
+        raise InputValidationError(
+            f"At least 2 streams are required to compute correlation, "
+            f"got {len(selected_streams)}: {selected_streams}"
+        )
+
     # Select only required columns
     required_cols = [timestamp_col] + selected_streams
     processed_df = df[required_cols].copy()
@@ -88,6 +113,12 @@ def preprocess_timeseries(df, timestamp_col, selected_streams):
         processed_df,
         time_col=timestamp_col
     )
+
+    # CCA112 fix (CCA109 Defects 4 & 6): carry the data-quality counts through
+    # so the API response can disclose what preprocessing altered.
+    non_numeric_coerced = processed_df.attrs.get("non_numeric_coerced", 0)
+    non_numeric_by_column = processed_df.attrs.get("non_numeric_by_column", {})
+    missing_before_impute = int(processed_df.isnull().sum().sum())
 
     # Handle missing values
     processed_df = handle_missing_values(
@@ -118,8 +149,14 @@ def preprocess_timeseries(df, timestamp_col, selected_streams):
     # Ensure index remains datetime format
     processed_df.index = pd.to_datetime(processed_df.index)
 
-    return processed_df
+    processed_df.attrs["data_quality"] = {
+        "non_numeric_coerced": int(non_numeric_coerced),
+        "non_numeric_by_column": non_numeric_by_column,
+        "missing_imputed": missing_before_impute,
+        "rows_out": int(len(processed_df))
+    }
 
+    return processed_df
 
 def create_rolling_windows(
     df: pd.DataFrame,
@@ -389,5 +426,6 @@ def detect_correlation_change_alert(
         "windows": windows,
         "correlation_results": correlation_results,
         "changes": changes,
-        "alerts": alerts
+        "alerts": alerts,
+        "data_quality": processed_data.attrs.get("data_quality", {})
     }

@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 URL = "http://127.0.0.1:5001/detect-correlation-alert"
-DATASET = "../datasets/complex.csv"
+DATASET = DATASET = "../../datasets/aws_control_merged.csv"
 REPETITIONS = 3
 
 CONFIGURATIONS = [
@@ -37,9 +37,9 @@ def send_request(method: str, window: int, step: int):
         "-F",
         f"file=@{DATASET}",
         "-F",
-        "timestamp_col=time",
+        "timestamp_col=timestamp",
         "-F",
-        "selected_streams=s1,s2,s3",
+        "selected_streams=ec2_cpu,ec2_net,elb_req",
         "-F",
         f"window_size={window}",
         "-F",

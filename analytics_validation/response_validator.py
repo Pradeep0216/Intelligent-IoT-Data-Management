@@ -51,6 +51,8 @@ def validate_response(response):
     if "alert_type" in response:
         if not isinstance(response["alert_type"], str):
             errors.append("alert_type must be a string")
+        elif not response["alert_type"].strip():
+            errors.append("alert_type must not be empty")
         elif response["alert_type"] not in ALERT_TYPES:
             errors.append(
                 f"Unsupported alert type: {response['alert_type']}"
@@ -59,10 +61,14 @@ def validate_response(response):
     if "target" in response:
         if not isinstance(response["target"], str):
             errors.append("target must be a string")
+        elif not response["target"].strip():
+            errors.append("target must not be empty")
 
     if "method" in response:
         if not isinstance(response["method"], str):
             errors.append("method must be a string")
+        elif not response["method"].strip():
+            errors.append("method must not be empty")
 
     if "score" in response:
         if isinstance(response["score"], bool) or not isinstance(
@@ -73,6 +79,8 @@ def validate_response(response):
     if "severity" in response:
         if not isinstance(response["severity"], str):
             errors.append("severity must be a string")
+        elif not response["severity"].strip():
+            errors.append("severity must not be empty")
         elif response["severity"] not in SEVERITY_LEVELS:
             errors.append(
                 f"Unsupported severity: {response['severity']}"
@@ -81,6 +89,8 @@ def validate_response(response):
     if "message" in response:
         if not isinstance(response["message"], str):
             errors.append("message must be a string")
+        elif not response["message"].strip():
+            errors.append("message must not be empty")
 
     if "supporting_values" in response:
         if not isinstance(response["supporting_values"], dict):

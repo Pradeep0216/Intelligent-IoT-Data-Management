@@ -245,3 +245,30 @@ the Postman form-data request was configured incorrectly.
 Fix: The file field was changed to the File type, simple.csv was
 uploaded correctly, and the request was sent again. The API then
 processed the dataset successfully and returned HTTP 200 OK.
+
+
+### Configurable correlation settings
+
+The `/detect-correlation-alert` endpoint supports the following configurable
+parameters for both JSON and multipart/form-data requests.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `window_size` | Integer | 20 | Number of records included in each rolling correlation window. |
+| `step_size` | Integer | 10 | Number of records advanced between consecutive windows. |
+| `method` | String | `pearson` | Correlation method used for calculation. |
+| `strong_corr_threshold` | Float | 0.7 | Threshold used to classify a correlation as strong. |
+| `weak_corr_threshold` | Float | 0.4 | Threshold used to classify a correlation as weak. |
+| `delta_threshold` | Float | 0.3 | Minimum correlation change required before an alert is considered significant. |
+
+### Configuration validation
+
+The API validates configuration before running the correlation pipeline.
+
+- `window_size` must be a positive integer.
+- `step_size` must be a positive integer.
+- `strong_corr_threshold` must be between `-1` and `1`.
+- `weak_corr_threshold` must be between `-1` and `1`.
+- `delta_threshold` must be between `-1` and `1`.
+- `weak_corr_threshold` must be less than `strong_corr_threshold`.
+- Invalid configuration returns HTTP `400 Bad Request`.

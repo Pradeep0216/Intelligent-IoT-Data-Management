@@ -280,4 +280,14 @@ def adapt_models_output(
 
         alerts.append(alert)
 
-    return alerts
+    # return alerts
+    # returns a contract instead of a raw data. updated to make it suitable for the runnable code
+    return {
+        "status": "success",
+        "alerts": alerts,
+        "summary": {
+            "alert_count": len(alerts),
+            "processed_items": len(model_result["timestamp"])
+        },
+        "errors": []
+    }

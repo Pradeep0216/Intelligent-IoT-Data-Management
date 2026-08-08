@@ -1,8 +1,22 @@
 {
-    "timestamp": "2026-07-29T10:35:00Z",
-    "detector": "IsolationForest",
-    "is_anomaly": true,
-    "anomaly_score": 0.91,
-    "runtime_ms": 24,
-    "threshold": 0.7
+    "model_name": "IsolationForest",
+    "timestamp": [
+        "2026-08-05T08:20:00Z",
+        "2026-08-05T08:21:00Z",
+        "2026-08-05T08:22:00Z",
+        "2026-08-05T08:23:00Z"
+    ],
+    "anomaly_flag": [
+        false,
+        true,
+        false,
+        true
+    ],
+    "score": [
+        0.12,
+        0.91,
+        0.18,
+        0.95
+    ],
+    "runtime": 0.024
 }

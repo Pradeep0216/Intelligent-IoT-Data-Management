@@ -32,6 +32,22 @@
     "model":"OCSVM"
   },
   {
+    "detector":"IsolationForestDetector",
+    "precision":0.73545,
+    "recall":0.367725,
+    "f1":0.4903,
+    "auc_roc":0.818892,
+    "n_predicted":1134,
+    "n_actual":2268,
+    "true_positives":834,
+    "false_positives":300,
+    "true_negatives":20115,
+    "false_negatives":1434,
+    "false_positive_rate":0.014695,
+    "false_negative_rate":0.632275,
+    "model":"IsolationForest"
+  },
+  {
     "detector":"LevelShiftADDetector",
     "precision":0.236066,
     "recall":0.031746,
@@ -158,5 +174,21 @@
     "false_positive_rate":0.000196,
     "false_negative_rate":0.79806,
     "model":"ThresholdADDetector"
+  },
+  {
+    "detector":"LSTMDetector",
+    "precision":0.738095,
+    "recall":0.369048,
+    "f1":0.492063,
+    "auc_roc":0.797006,
+    "n_predicted":1134,
+    "n_actual":2268,
+    "true_positives":837,
+    "false_positives":297,
+    "true_negatives":20118,
+    "false_negatives":1431,
+    "false_positive_rate":0.014548,
+    "false_negative_rate":0.630952,
+    "model":"LSTMDetector"
   }
 ]

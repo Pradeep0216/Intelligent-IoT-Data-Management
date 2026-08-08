@@ -18,6 +18,7 @@ from detectors.interquartile_range_ad import InterQuartileRangeADDetector
 from detectors.copod_detector import COPODDetector
 from detectors.lof_detector import LOFDetector
 from detectors.thresholdad import ThresholdADDetector
+from detectors.lstm_detector import LSTMDetector
 
 from evaluator import evaluate
 from roc_plotter import plot_roc_curves
@@ -39,6 +40,15 @@ def build_detectors():
         InterQuartileRangeADDetector(),
         LOFDetector(),
         ThresholdADDetector(),
+        LSTMDetector(
+            sequence_length=20,
+            hidden_size=32,
+            num_layers=1,
+            learning_rate=0.001,
+            epochs=20,
+            batch_size=32,
+            threshold_percentile=95,
+        ),
     ]
 
 
@@ -155,6 +165,7 @@ def run_pipeline(
     print(f"[pipeline] Output directory: {output_dir}")
 
     df, scaler = load_and_prepare(filepath)
+    clean_df = df.copy()
 
     print(f"[pipeline] Shape following preprocessor acting: {df.shape}")
     print(f"[pipeline] Columns: {list(df.columns)}")
@@ -199,6 +210,9 @@ def run_pipeline(
 
     detectors = build_detectors()
     results = {}
+    # Fit trainable detectors on clean data before synthetic anomalies are injected.
+    if benchmark_mode and label_source in ("synthetic", "nab"):
+        detectors = fit_trainable_detectors(detectors, clean_df)
 
     # Run detectors
     for detector in detectors:

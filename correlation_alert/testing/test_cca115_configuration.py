@@ -89,8 +89,8 @@ def test_documented_defaults(client):
         ("strong_corr_threshold", "-1.1"),
         ("weak_corr_threshold", "1.1"),
         ("weak_corr_threshold", "-1.1"),
-        ("delta_threshold", "1.1"),
-        ("delta_threshold", "-1.1"),
+        ("delta_threshold", "-0.1"),
+        ("delta_threshold", "2.1"),
     ],
 )
 def test_invalid_configuration_returns_400(
@@ -110,6 +110,55 @@ def test_invalid_configuration_returns_400(
 
     assert payload["status"] == "error"
     assert payload["error_type"] == "invalid_input"
+
+
+def test_invalid_method_returns_400(client):
+    response = client.post(
+        "/detect-correlation-alert",
+        data=multipart_request(
+            method="banana",
+        ),
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+
+    payload = response.get_json()
+
+    assert payload["status"] == "error"
+    assert payload["error_type"] == "invalid_input"
+    assert "method" in payload["message"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "0",
+        "1.1",
+        "2",
+    ],
+)
+def test_valid_delta_threshold_is_accepted(
+    client,
+    value,
+):
+    response = client.post(
+        "/detect-correlation-alert",
+        data=multipart_request(
+            delta_threshold=value,
+        ),
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+
+    payload = response.get_json()
+
+    assert payload["status"] == "success"
+    assert (
+        payload["configuration"]["delta_threshold"]
+        == float(value)
+    )
 
 
 def test_weak_threshold_must_be_less_than_strong(client):

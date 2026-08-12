@@ -10,8 +10,6 @@ from preprocessing import InputValidationError
 app = Flask(__name__)
 CORS(app)
 
-
-
 DEFAULT_WINDOW_SIZE = 20
 DEFAULT_STEP_SIZE = 10
 DEFAULT_METHOD = "pearson"
@@ -20,6 +18,7 @@ DEFAULT_STRONG_CORR_THRESHOLD = 0.7
 DEFAULT_WEAK_CORR_THRESHOLD = 0.4
 DEFAULT_DELTA_THRESHOLD = 0.3
 
+ALLOWED_CORRELATION_METHODS = {"pearson", "spearman"}
 
 
 def parse_positive_int(value, name):
@@ -48,12 +47,10 @@ def parse_positive_int(value, name):
 
 def parse_correlation_threshold(value, name):
     """
-    Convert a request value to float and validate that
-    it is inside the correlation range [-1, 1].
+    Convert a correlation threshold to float and validate
+    that it is within the valid correlation range [-1, 1].
 
-    Raises:
-        InputValidationError:
-            If the value is not numeric or is outside [-1, 1].
+    Used for strong_corr_threshold and weak_corr_threshold.
     """
     try:
         parsed = float(value)
@@ -70,6 +67,46 @@ def parse_correlation_threshold(value, name):
     return parsed
 
 
+def parse_delta_threshold(value):
+    """
+    Convert delta_threshold to float and validate that it
+    is within [0, 2].
+
+    Correlation values lie between -1 and 1. Because delta
+    represents an absolute change between two correlations,
+    its theoretical range is 0 to 2.
+    """
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise InputValidationError(
+            "'delta_threshold' must be a number between 0 and 2."
+        )
+
+    if parsed < 0 or parsed > 2:
+        raise InputValidationError(
+            "'delta_threshold' must be between 0 and 2."
+        )
+
+    return parsed
+
+
+def validate_method(method):
+    """
+    Validate the requested correlation method.
+
+    Only methods supported by the correlation API are accepted.
+    Invalid caller input must return HTTP 400 rather than
+    reaching pandas and causing an internal HTTP 500 error.
+    """
+    if method not in ALLOWED_CORRELATION_METHODS:
+        raise InputValidationError(
+            "'method' must be either 'pearson' or 'spearman'."
+        )
+
+    return method
+
+
 def validate_configuration(
     window_size,
     step_size,
@@ -78,12 +115,14 @@ def validate_configuration(
     delta_threshold,
 ):
     """
-    Validate all configurable correlation alert parameters.
+    Validate configurable correlation alert parameters.
 
     Rules:
         - window_size must be a positive integer
         - step_size must be a positive integer
-        - thresholds must be within [-1, 1]
+        - strong_corr_threshold must be within [-1, 1]
+        - weak_corr_threshold must be within [-1, 1]
+        - delta_threshold must be within [0, 2]
         - weak_corr_threshold must be less than
           strong_corr_threshold
     """
@@ -108,9 +147,8 @@ def validate_configuration(
         "weak_corr_threshold",
     )
 
-    delta_threshold = parse_correlation_threshold(
+    delta_threshold = parse_delta_threshold(
         delta_threshold,
-        "delta_threshold",
     )
 
     if weak_corr_threshold >= strong_corr_threshold:
@@ -126,7 +164,6 @@ def validate_configuration(
         weak_corr_threshold,
         delta_threshold,
     )
-
 
 @app.route("/service-status", methods=["GET"])
 def service_status():
@@ -319,7 +356,7 @@ def detect_correlation_alert_api():
             selected_streams=selected_streams,
             window_size=window_size,
             step_size=step_size,
-            method=method,
+            method=validate_method(method),
             strong_corr_threshold=strong_corr_threshold,
             weak_corr_threshold=weak_corr_threshold,
             delta_threshold=delta_threshold,

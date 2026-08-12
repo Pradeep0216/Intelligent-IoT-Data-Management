@@ -5,9 +5,8 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
-
 URL = "http://127.0.0.1:5001/detect-correlation-alert"
-DATASET = DATASET = "../../datasets/aws_control_merged.csv"
+DATASET = "../../datasets/nab_realtraffic/traffic_4stream_merged.csv"
 REPETITIONS = 3
 
 CONFIGURATIONS = [
@@ -39,7 +38,7 @@ def send_request(method: str, window: int, step: int):
         "-F",
         "timestamp_col=timestamp",
         "-F",
-        "selected_streams=ec2_cpu,ec2_net,elb_req",
+        "selected_streams=occupancy_t4013,speed_t4013,occupancy_6005,speed_6005",
         "-F",
         f"window_size={window}",
         "-F",

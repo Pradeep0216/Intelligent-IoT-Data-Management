@@ -1,6 +1,10 @@
 import pandas as pd
 import numpy as np
 
+from logging_setup import get_logger
+
+logger = get_logger("preprocessing")
+
 
 class InputValidationError(ValueError):
     """Raised when the caller's input is invalid (bad columns, unusable data).
@@ -16,8 +20,8 @@ def load_sensor_data(filepath: str = "datasets/complex.csv") -> pd.DataFrame:
     if "time" not in df.columns:
         raise ValueError("The dataset must contain a 'time' column.")
 
-    print(f"[LOAD] Loaded {len(df)} rows")
-    print(f"[LOAD] Columns: {list(df.columns)}")
+    logger.info(f"[LOAD] Loaded {len(df)} rows")
+    logger.info(f"[LOAD] Columns: {list(df.columns)}")
     return df
 
 
@@ -60,18 +64,18 @@ def fix_timestamps(df: pd.DataFrame, time_col: str = "time") -> pd.DataFrame:
         df[time_col] = parsed_numeric
         detected, valid = "numeric", numeric_valid
 
-    print(f"[TIMESTAMPS] Parsed '{time_col}' as {detected} "
+    logger.info(f"[TIMESTAMPS] Parsed '{time_col}' as {detected} "
           f"({valid}/{total_rows} rows valid)")
 
     invalid_time = int(df[time_col].isna().sum())
     if invalid_time > 0:
-        print(f"[TIMESTAMPS] Removed {invalid_time} rows with invalid time values")
+        logger.warning(f"[TIMESTAMPS] Removed {invalid_time} rows with invalid time values")
 
     df = df.dropna(subset=[time_col])
 
     duplicate_count = int(df.duplicated(subset=[time_col]).sum())
     if duplicate_count > 0:
-        print(f"[TIMESTAMPS] Removed {duplicate_count} duplicate timestamps "
+        logger.warning(f"[TIMESTAMPS] Removed {duplicate_count} duplicate timestamps "
               f"(keeping first occurrence)")
 
     df = df.drop_duplicates(subset=[time_col])
@@ -86,7 +90,7 @@ def fix_timestamps(df: pd.DataFrame, time_col: str = "time") -> pd.DataFrame:
             "holds numeric counters, ISO 8601 strings, or ThingSpeak created_at values."
         )
 
-    print(f"[TIMESTAMPS] Sorted by '{time_col}', "
+    logger.info(f"[TIMESTAMPS] Sorted by '{time_col}', "
           f"detected {detected}, kept {len(df)} rows")
     return df
 
@@ -110,9 +114,9 @@ def convert_sensor_columns_to_numeric(df: pd.DataFrame, time_col: str = "time") 
             coerced_by_col[col] = coerced
             coerced_total += coerced
 
-    print(f"[NUMERIC] Converted sensor columns to numeric: {sensor_cols}")
+    logger.info(f"[NUMERIC] Converted sensor columns to numeric: {sensor_cols}")
     if coerced_total > 0:
-        print(f"[NUMERIC] Coerced {coerced_total} non-numeric value(s) to NaN: "
+        logger.warning(f"[NUMERIC] Coerced {coerced_total} non-numeric value(s) to NaN: "
               f"{coerced_by_col}")
 
     df.attrs["non_numeric_coerced"] = coerced_total
@@ -133,8 +137,8 @@ def handle_missing_values(df: pd.DataFrame, method: str = "interpolate") -> pd.D
         raise ValueError(f"Unknown method: {method}")
 
     missing_after = df.isnull().sum().sum()
-    print(f"[MISSING] Missing values before: {missing_before}")
-    print(f"[MISSING] Missing values after: {missing_after}")
+    logger.info(f"[MISSING] Missing values before: {missing_before}")
+    logger.info(f"[MISSING] Missing values after: {missing_after}")
     return df
 
 
@@ -165,7 +169,12 @@ def remove_outliers(df: pd.DataFrame, sensor_cols: list, iqr_factor: float = 3.0
 
     df[sensor_cols] = df[sensor_cols].interpolate(method="linear", limit_direction="both")
 
-    print(f"[OUTLIERS] Replaced {total_outliers} outlier values")
+    # Only warn when values were actually altered. A warning that fires on every
+    # clean run is noise, and noise is what makes real warnings get ignored.
+    if total_outliers > 0:
+        logger.warning(f"[OUTLIERS] Replaced {total_outliers} outlier values")
+    else:
+        logger.info("[OUTLIERS] No outliers replaced")
     return df
 
 
@@ -182,7 +191,7 @@ def align_to_common_index(df: pd.DataFrame, time_col: str = "time", freq=1) -> p
     if pd.api.types.is_datetime64_any_dtype(df.index):
         if isinstance(freq, int):
             freq = "5min"
-            print(
+            logger.info(
                 "[ALIGN] Datetime index with an integer freq. Falling back to "
                 "'5min', which matches the NAB realTraffic sampling rate. Pass "
                 "an offset string such as '1min' for a differently sampled feed."
@@ -200,8 +209,8 @@ def align_to_common_index(df: pd.DataFrame, time_col: str = "time", freq=1) -> p
     df = df.interpolate(method="linear", limit_direction="both")
     df = df.reset_index().rename(columns={"index": time_col})
 
-    print(f"[ALIGN] Reindexed time from {df[time_col].min()} to {df[time_col].max()} with freq={freq}")
-    print(f"[ALIGN] Output rows after alignment: {len(df)}")
+    logger.info(f"[ALIGN] Reindexed time from {df[time_col].min()} to {df[time_col].max()} with freq={freq}")
+    logger.info(f"[ALIGN] Output rows after alignment: {len(df)}")
     return df
 
 
@@ -218,8 +227,8 @@ def validate_output(df: pd.DataFrame, time_col: str = "time") -> pd.DataFrame:
     for col in sensor_cols:
         df[col] = df[col].astype(np.float64)
 
-    print(f"[VALIDATE] Output shape: {df.shape}")
-    print("[VALIDATE] Dataset is sorted, clean, and ready for correlation analysis")
+    logger.info(f"[VALIDATE] Output shape: {df.shape}")
+    logger.info("[VALIDATE] Dataset is sorted, clean, and ready for correlation analysis")
     return df
 
 
@@ -227,9 +236,9 @@ def run_pipeline(
     input_path: str = "datasets/complex.csv",
     output_path: str = "datasets/clean_sensor_data.csv"
 ) -> pd.DataFrame:
-    print("=" * 60)
-    print("SENSOR DATA PREPROCESSING PIPELINE")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("SENSOR DATA PREPROCESSING PIPELINE")
+    logger.info("=" * 60)
 
     df = load_sensor_data(input_path)
     df = fix_timestamps(df, time_col="time")
@@ -237,19 +246,19 @@ def run_pipeline(
     df = handle_missing_values(df, method="interpolate")
 
     sensor_cols = [col for col in df.columns if col != "time"]
-    print(f"[INFO] Sensor columns: {sensor_cols}")
+    logger.info(f"[INFO] Sensor columns: {sensor_cols}")
 
     df = remove_outliers(df, sensor_cols=sensor_cols, iqr_factor=3.0)
     df = align_to_common_index(df, time_col="time", freq=1)
     df = validate_output(df, time_col="time")
 
     df.to_csv(output_path, index=False)
-    print(f"[DONE] Cleaned data saved to: {output_path}")
-    print("=" * 60)
+    logger.info(f"[DONE] Cleaned data saved to: {output_path}")
+    logger.info("=" * 60)
 
     return df
 
 
 if __name__ == "__main__":
     clean_df = run_pipeline()
-    print(clean_df.head())
+    logger.info(clean_df.head())

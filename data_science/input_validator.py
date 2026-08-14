@@ -1,5 +1,5 @@
 """
-input_validator.py (v2 — Week 5)
+input_validator.py (v2.1 — Week 5, PR #5 review round 1)
 Shared input validator for the Models sub-team pipeline.
 
 v2 changes (Week 5 — "lock the input boundary"):
@@ -11,6 +11,12 @@ v2 changes (Week 5 — "lock the input boundary"):
     via pandas, producing meaningless dates near 1970-01-01 instead of raising an
     error. v2 detects this and rejects it unless the caller explicitly
     acknowledges the column is an index, not real calendar time.
+
+v2.1 fix (addressing Lucas's review of PR #5):
+  - sensor_id_col now actually normalises to a column literally named
+    'sensor_id' in the output, matching what the documentation already
+    promised. Previously the original column name was kept as-is, which was
+    inconsistent with the documented contract.
 
 Owner: Deepakkumar Govindan (Week 5 — Input boundary validator + pipeline integration)
 """
@@ -126,9 +132,13 @@ def validate_input(
 
     exclude_cols = {timestamp_col}
     if sensor_id_col is not None:
-        exclude_cols.add(sensor_id_col)
         if df[sensor_id_col].isna().any():
             raise InputValidationError(f"Missing sensor IDs found in column '{sensor_id_col}'")
+        # v2.1 fix: normalise to a column literally named 'sensor_id', matching
+        # the documented contract, instead of keeping the original column name.
+        if sensor_id_col != "sensor_id":
+            df = df.rename(columns={sensor_id_col: "sensor_id"})
+        exclude_cols.add("sensor_id")
 
     if sensor_cols is None:
         sensor_cols = [c for c in df.columns if c not in exclude_cols]
@@ -201,4 +211,13 @@ if __name__ == "__main__":
         validate_input(bad_missing)
         print("FAILED — should have raised InputValidationError")
     except InputValidationError as e:
-        print(f"REJECTED correctly: {e}")
+        print(f"REJECTED correctly: {e}\n")
+
+    print("=== Test 7: sensor_id_col normalises to a 'sensor_id' column (v2.1 fix) ===")
+    with_device_col = good.copy()
+    with_device_col["device_id"] = "sensor_A"
+    validated7 = validate_input(with_device_col, sensor_id_col="device_id")
+    print(validated7)
+    assert "sensor_id" in validated7.columns, "FAILED: sensor_id column not present"
+    assert "device_id" not in validated7.columns, "FAILED: original column name still present"
+    print("PASSED (original 'device_id' column renamed to standard 'sensor_id')")

@@ -1,13 +1,27 @@
 {
-  "timestamp": "2026-08-02T12:30:00Z",
-  "alert_type": "anomaly",
-  "target": "sensor_01",
-  "method": "isolation_forest",
-  "score": 0.91,
-  "severity": "high",
-  "message": "Anomalous temperature reading detected",
+  "timestamp": "2026-08-05T08:25:00Z",
+  "alert_type": "POINTWISE_ANOMALY",
+  "target": {
+    "entity_id": null,
+    "metrics": [
+      "temperature"
+    ]
+  },
+  "method": "IsolationForest",
+  "score": 0.1825,
+  "score_metadata": {
+    "type": "raw_anomaly_score",
+    "normalized": false
+  },
+  "severity": null,
+  "message": "Anomaly detected in temperature.",
+  "time_window": null,
   "supporting_values": {
-    "observed_value": 37.5,
-    "expected_range": "18-30"
-  }
+    "sensor_value": 88.5,
+    "runtime_ms": 35
+  },
+  "source": {
+    "component": "models"
+  },
+  "alert_id": null
 }

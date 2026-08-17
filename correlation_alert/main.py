@@ -186,10 +186,10 @@ def create_rolling_windows(
     return windows
 
 
-def compute_window_correlations(
+def  compute_window_correlations(
     windows: List[pd.DataFrame],
     method: str = "pearson",
-    min_periods: Optional[int] = None
+    min_periods: int = 1,
 ) -> List[Dict[str, Any]]:
     """
     Computes Pearson (or other) correlation matrix for each pre-created window.

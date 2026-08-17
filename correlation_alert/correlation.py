@@ -5,8 +5,8 @@ import pandas as pd
 from .preprocessing import InputValidationError
 
 
-DEFAULT_WINDOW_SIZE = 30
-DEFAULT_STEP_SIZE = 5
+DEFAULT_WINDOW_SIZE = 20
+DEFAULT_STEP_SIZE = 10
 DEFAULT_METHOD = "pearson"
 DEFAULT_STRONG_THRESHOLD = 0.7
 DEFAULT_WEAK_THRESHOLD = 0.4
@@ -55,8 +55,8 @@ def validate_correlation_parameters(
     if method not in VALID_METHODS:
         raise InputValidationError(f"method must be one of {sorted(VALID_METHODS)}")
 
-    _require_number(strong_corr_threshold, "strong_corr_threshold", 0, 1)
-    _require_number(weak_corr_threshold, "weak_corr_threshold", 0, 1)
+    _require_number(strong_corr_threshold, "strong_corr_threshold", -1, 1)
+    _require_number(weak_corr_threshold, "weak_corr_threshold", -1, 1)
     _require_number(delta_threshold, "delta_threshold", 0, 2)
     _require_number(medium_threshold, "medium_threshold", 0, 2)
     _require_number(high_threshold, "high_threshold", 0, 2)

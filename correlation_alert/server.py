@@ -1,3 +1,6 @@
+import time
+import uuid
+
 import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -11,10 +14,16 @@ from .correlation import (
     DEFAULT_STRONG_THRESHOLD,
     DEFAULT_WEAK_THRESHOLD,
     DEFAULT_WINDOW_SIZE,
+    validate_correlation_parameters,
 )
 from .main import detect_correlation_change_alert
+from .logging_config import get_logger
 from .preprocessing import InputValidationError
 from .serialization import serialize_correlation_results, with_iso_timestamps
+from .settings import load_settings
+
+
+ALLOWED_API_METHODS = {"pearson", "spearman"}
 
 
 def _parse_integer(value, name):
@@ -58,6 +67,13 @@ def _parse_selected_streams(value):
     return list(value)
 
 
+def _parse_method(value):
+    method = str(value).lower()
+    if method not in ALLOWED_API_METHODS:
+        raise InputValidationError("method must be either pearson or spearman")
+    return method
+
+
 def parse_request_input():
     """Read JSON or multipart data and return typed pipeline arguments."""
     if "file" in request.files:
@@ -86,7 +102,7 @@ def parse_request_input():
         "selected_streams": _parse_selected_streams(selected_streams),
         "window_size": _parse_integer(source.get("window_size", DEFAULT_WINDOW_SIZE), "window_size"),
         "step_size": _parse_integer(source.get("step_size", DEFAULT_STEP_SIZE), "step_size"),
-        "method": str(source.get("method", DEFAULT_METHOD)).lower(),
+        "method": _parse_method(source.get("method", DEFAULT_METHOD)),
         "strong_corr_threshold": _parse_float(
             source.get("strong_corr_threshold", DEFAULT_STRONG_THRESHOLD),
             "strong_corr_threshold",
@@ -113,11 +129,24 @@ def parse_request_input():
     }
 
 
-def build_api_response(result):
+def build_api_response(result, pipeline_arguments, request_id, runtime_ms):
     """Build the stable JSON response from pipeline output."""
     data_quality = result.get("data_quality", {})
     return {
         "status": "success",
+        "request_id": request_id,
+        "runtime_ms": runtime_ms,
+        "configuration": {
+            name: pipeline_arguments[name]
+            for name in (
+                "window_size",
+                "step_size",
+                "method",
+                "strong_corr_threshold",
+                "weak_corr_threshold",
+                "delta_threshold",
+            )
+        },
         "summary": {
             "processed_rows": len(result["processed_data"]),
             "windows": len(result["windows"]),
@@ -136,43 +165,191 @@ def build_api_response(result):
     }
 
 
-def create_app():
+def _run_pipeline_self_test():
+    """Run a small frame through the real analysis pipeline."""
+    frame = pd.DataFrame(
+        {
+            "time": range(30),
+            "sensor_a": [index % 7 for index in range(30)],
+            "sensor_b": [(index * 3) % 11 for index in range(30)],
+        }
+    )
+    detect_correlation_change_alert(
+        frame,
+        "time",
+        ["sensor_a", "sensor_b"],
+        window_size=10,
+        step_size=5,
+        method="pearson",
+    )
+
+
+def _readiness_checks():
+    """Return readiness and diagnostic results for required components."""
+    checks = {}
+    ready = True
+
+    try:
+        import numpy
+
+        checks["dependencies"] = {
+            "ok": True,
+            "pandas": pd.__version__,
+            "numpy": numpy.__version__,
+        }
+    except Exception as exc:
+        ready = False
+        checks["dependencies"] = {"ok": False, "error": str(exc)}
+
+    try:
+        _run_pipeline_self_test()
+        checks["pipeline"] = {
+            "ok": True,
+            "detail": "self test completed",
+        }
+    except Exception as exc:
+        ready = False
+        checks["pipeline"] = {"ok": False, "error": str(exc)}
+
+    return ready, checks
+
+
+def log_startup(logger, service_settings):
+    """Log the active non-secret settings before Flask starts."""
+    logger.info(
+        "event=startup service_url=%s timeout_seconds=%d log_level=%s "
+        "log_file=%s debug=%s",
+        service_settings.service_url,
+        service_settings.request_timeout_seconds,
+        service_settings.log_level,
+        service_settings.log_file,
+        service_settings.debug,
+    )
+
+
+def create_app(service_settings=None):
     """Create the Flask application for the correlation alert service."""
+    configured = service_settings or load_settings()
+    logger = get_logger("api", configured)
     app = Flask(__name__)
+    app.config["SERVICE_SETTINGS"] = configured
     CORS(app)
 
     @app.get("/service-status")
     def service_status():
-        return jsonify(
-            {
-                "status": "running",
-                "message": "Correlation Alert Service is running.",
-                "service": "correlation-alert-api",
-            }
-        )
+        started_at = time.perf_counter()
+        ready, checks = _readiness_checks()
+        check_duration_ms = int((time.perf_counter() - started_at) * 1000)
+        body = {
+            "status": "running" if ready else "degraded",
+            "message": (
+                "Correlation Alert Service is running."
+                if ready
+                else "Correlation Alert Service is running but is not ready."
+            ),
+            "service": "correlation-alert-api",
+            "live": True,
+            "ready": ready,
+            "checks": checks,
+            "check_duration_ms": check_duration_ms,
+            "config": configured.as_dict(),
+        }
+        if ready:
+            logger.info("health ready=true check_ms=%d", check_duration_ms)
+        else:
+            logger.error("health ready=false check_ms=%d", check_duration_ms)
+        return jsonify(body), (200 if ready else 503)
 
     @app.post("/detect-correlation-alert")
     def detect_correlation_alert_api():
+        request_id = uuid.uuid4().hex[:8]
+        started_at = time.perf_counter()
+        request_source = "file" if "file" in request.files else "json"
+
+        def elapsed_ms():
+            return int((time.perf_counter() - started_at) * 1000)
+
         try:
-            result = detect_correlation_change_alert(**parse_request_input())
-            return jsonify(build_api_response(result)), 200
+            pipeline_arguments = parse_request_input()
+            logger.info(
+                "request_id=%s event=received source=%s rows_in=%d "
+                "streams=%s window_size=%d step_size=%d method=%s",
+                request_id,
+                request_source,
+                len(pipeline_arguments["df"]),
+                ",".join(pipeline_arguments["selected_streams"]),
+                pipeline_arguments["window_size"],
+                pipeline_arguments["step_size"],
+                pipeline_arguments["method"],
+            )
+            validate_correlation_parameters(
+                window_size=pipeline_arguments["window_size"],
+                step_size=pipeline_arguments["step_size"],
+                method=pipeline_arguments["method"],
+                strong_corr_threshold=pipeline_arguments["strong_corr_threshold"],
+                weak_corr_threshold=pipeline_arguments["weak_corr_threshold"],
+                delta_threshold=pipeline_arguments["delta_threshold"],
+                medium_threshold=pipeline_arguments["medium_threshold"],
+                high_threshold=pipeline_arguments["high_threshold"],
+            )
+            result = detect_correlation_change_alert(**pipeline_arguments)
+            runtime_ms = elapsed_ms()
+            logger.info(
+                "request_id=%s event=completed rows_out=%d windows=%d "
+                "alerts=%d runtime_ms=%d",
+                request_id,
+                len(result["processed_data"]),
+                len(result["windows"]),
+                len(result["alerts"]),
+                runtime_ms,
+            )
+            if runtime_ms > configured.request_timeout_seconds * 1000:
+                logger.warning(
+                    "request_id=%s event=slow runtime_ms=%d timeout_seconds=%d",
+                    request_id,
+                    runtime_ms,
+                    configured.request_timeout_seconds,
+                )
+            response = build_api_response(
+                result,
+                pipeline_arguments,
+                request_id,
+                runtime_ms,
+            )
+            return jsonify(response), 200
         except InputValidationError as exc:
+            logger.warning(
+                "request_id=%s event=failed error_type=invalid_input "
+                "runtime_ms=%d message=%s",
+                request_id,
+                elapsed_ms(),
+                exc,
+            )
             return (
                 jsonify(
                     {
                         "status": "error",
                         "error_type": "invalid_input",
+                        "request_id": request_id,
                         "message": str(exc),
                     }
                 ),
                 400,
             )
         except Exception as exc:
+            logger.error(
+                "request_id=%s event=failed error_type=internal_error "
+                "runtime_ms=%d exception=%s",
+                request_id,
+                elapsed_ms(),
+                type(exc).__name__,
+            )
             return (
                 jsonify(
                     {
                         "status": "error",
                         "error_type": "internal_error",
+                        "request_id": request_id,
                         "message": str(exc),
                     }
                 ),
@@ -186,4 +363,10 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=False, port=5001)
+    runtime_settings = app.config["SERVICE_SETTINGS"]
+    log_startup(get_logger("api", runtime_settings), runtime_settings)
+    app.run(
+        host=runtime_settings.host,
+        port=runtime_settings.port,
+        debug=runtime_settings.debug,
+    )

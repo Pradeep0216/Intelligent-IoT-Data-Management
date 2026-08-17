@@ -34,7 +34,10 @@ Analytics Integration team.
 | selected_streams | String | s1,s2,s3 | Sensor streams to analyse. |
 | window_size | Integer | 20 | Sliding window size used for correlation calculation. |
 | step_size | Integer | 10 | Sliding window step size. |
-| method | String | pearson | Correlation method used. |
+| method | String | pearson | Correlation method. Supported values: `pearson` and `spearman`. |
+| strong_corr_threshold | Float | 0.7 | Threshold used to classify a correlation as strong. Valid range: `[-1, 1]`. |
+| weak_corr_threshold   | Float | 0.4 | Threshold used to classify a correlation as weak. Valid range: `[-1, 1]`. |
+| delta_threshold       | Float | 0.3 | Minimum absolute correlation change required for alert detection. Valid range: `[0, 2]`. |
 | timestamp_col | String | time | Name of the timestamp column in the uploaded dataset. |
 
 ## 4. Response Structure
@@ -50,6 +53,7 @@ Top-level JSON response fields returned by the API are:
 | Field | Type | Example | Meaning |
 |------|------|---------|---------|
 | status | String | success | Indicates request completed successfully. |
+| configuration | Object | {...} | Configuration values used for the correlation analysis. |
 | correlations | Array | [{...}] | Correlation results for each sliding window. |
 | alerts | Array | [{...}] | Detected correlation alerts. |
 | changes | Array | [{...}] | Correlation changes calculated for sliding windows. |
@@ -91,16 +95,33 @@ Each item in the `alerts` array contains the following fields.
 
 ---
 
-## 7. Correlation Configuration
-The API currently supports the following configuration parameters.
 
-| Parameter | Description |
-|----------|-------------|
-| method | Correlation method used for calculation. Current implementation supports **pearson**. |
-| window_size | Number of records included in each sliding window. |
-| step_size | Number of records the sliding window advances between calculations. |
+## 7. Correlation Configuration
+
+The API supports configurable correlation analysis parameters so that alert sensitivity can be adjusted without modifying the source code.
+
+| Parameter | Default | Valid Values / Range | Description |
+| --------- | ------- | -------------------- | ----------- |
+| method | `pearson` | `pearson`, `spearman` | Correlation method used for rolling-window analysis. |
+| window_size | `20` | Positive integer | Number of records included in each sliding window. |
+| step_size | `10` | Positive integer | Number of records the sliding window advances between calculations. |
+| strong_corr_threshold | `0.7` | `[-1, 1]` | Threshold used to identify strong correlation. |
+| weak_corr_threshold | `0.4` | `[-1, 1]` | Threshold used to identify weak correlation. Must be less than `strong_corr_threshold`. |
+| delta_threshold | `0.3` | `[0, 2]` | Minimum absolute change between correlation values required for change detection. |
 
 ---
+### 7.1 Configuration Validation
+
+Configuration values are validated before the correlation analysis pipeline is executed.
+
+- `method` must be either `pearson` or `spearman`.
+- `window_size` and `step_size` must be positive integers.
+- `strong_corr_threshold` and `weak_corr_threshold` must be within `[-1, 1]`.
+- `weak_corr_threshold` must be less than `strong_corr_threshold`.
+- `delta_threshold` must be within `[0, 2]`.
+
+Invalid caller-supplied configuration returns HTTP `400 Bad Request` instead of an internal HTTP 500 response.
+
 
 ## 8. Supported Severity Values
 Current implementation supports the following alert severity levels.
@@ -122,9 +143,14 @@ Current implementation supports the following alert severity levels.
 
 ### Optional Request Parameters
 
-- window_size (default value applied if omitted)
-- step_size (default value applied if omitted)
-- method (defaults to pearson)
+### Optional Request Parameters
+
+- `window_size` — default `20`
+- `step_size` — default `10`
+- `method` — default `pearson`; supported values are `pearson` and `spearman`
+- `strong_corr_threshold` — default `0.7`; valid range `[-1, 1]`
+- `weak_corr_threshold` — default `0.4`; valid range `[-1, 1]` and must be less than `strong_corr_threshold`
+- `delta_threshold` — default `0.3`; valid range `[0, 2]`
 
 ### Optional Response Fields
 
@@ -144,13 +170,30 @@ Example error response:
   "message": "Missing 'timestamp_col'."
 }
 ```
+{
+  "status": "error",
+  "error_type": "invalid_input",
+  "message": "'method' must be either 'pearson' or 'spearman'."
+}
 
-Possible causes include:
+{
+  "status": "error",
+  "error_type": "invalid_input",
+  "message": "'delta_threshold' must be between 0 and 2."
+}
 
-- Missing timestamp_col
-- Missing selected_streams
-- Missing uploaded dataset
-- Unexpected server error
+
+Possible HTTP 400 causes include:
+
+- Missing `timestamp_col`
+- Missing `selected_streams`
+- Missing uploaded dataset or request data
+- Unsupported correlation method
+- Non-positive `window_size` or `step_size`
+- Correlation thresholds outside `[-1, 1]`
+- `weak_corr_threshold` greater than or equal to `strong_corr_threshold`
+- `delta_threshold` outside `[0, 2]`
+
 
 ## 11. API Testing Evidence
 
@@ -189,8 +232,10 @@ results.
   reason          String    Correlation changed...   Reason for alert
 
 The alert object carries exactly the ten fields above. It does not include
-method, window_size or step_size. Those are request parameters and are echoed
-back in the correlations array, not on each alert.
+`method`, `window_size`, `step_size`, `strong_corr_threshold`,
+`weak_corr_threshold`, or `delta_threshold`. These values are request-level
+configuration parameters and are returned in the top-level `configuration`
+object rather than repeated on each alert.
 
 ## 13. Summary Object
 
@@ -245,3 +290,30 @@ the Postman form-data request was configured incorrectly.
 Fix: The file field was changed to the File type, simple.csv was
 uploaded correctly, and the request was sent again. The API then
 processed the dataset successfully and returned HTTP 200 OK.
+
+
+### Configurable correlation settings
+
+The `/detect-correlation-alert` endpoint supports the following configurable
+parameters for both JSON and multipart/form-data requests.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `window_size` | Integer | 20 | Number of records included in each rolling correlation window. |
+| `step_size` | Integer | 10 | Number of records advanced between consecutive windows. |
+| `method` | String | `pearson` | Correlation method used for calculation. |
+| `strong_corr_threshold` | Float | 0.7 | Threshold used to classify a correlation as strong. |
+| `weak_corr_threshold` | Float | 0.4 | Threshold used to classify a correlation as weak. |
+| `delta_threshold` | Float | 0.3 | Minimum correlation change required before an alert is considered significant. |
+
+### Configuration validation
+
+The API validates configuration before running the correlation pipeline.
+
+- `window_size` must be a positive integer.
+- `step_size` must be a positive integer.
+- `strong_corr_threshold` must be between `-1` and `1`.
+- `weak_corr_threshold` must be between `-1` and `1`.
+- `delta_threshold` must be between `0` and `2`.
+- `weak_corr_threshold` must be less than `strong_corr_threshold`.
+- Invalid configuration returns HTTP `400 Bad Request`.

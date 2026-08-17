@@ -66,7 +66,7 @@ The function no longer makes an explicit copy for every overlapping window.
 
 ### `compute_window_correlations()`:
 
-Only `pearson`, `spearman`, and `kendall` are accepted. Window timestamps and raw correlation matrices are preserved.
+Only `pearson` and `spearman` are accepted. Window timestamps and raw correlation matrices are preserved.
 
 ### `compare_correlation_changes()`:
 

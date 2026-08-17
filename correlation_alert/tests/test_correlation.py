@@ -3,6 +3,7 @@ import pytest
 
 from correlation_alert.correlation import (
     InputValidationError,
+    VALID_METHODS,
     compare_correlation_changes,
     compute_window_correlations,
     create_rolling_windows,
@@ -43,7 +44,7 @@ def test_window_parameters_must_be_positive(window_size, step_size):
         create_rolling_windows(df, window_size, step_size)
 
 
-@pytest.mark.parametrize("method", ["pearson", "spearman", "kendall"])
+@pytest.mark.parametrize("method", ["pearson", "spearman"])
 def test_supported_method_computes_correlation_matrix(method):
     window = pd.DataFrame(
         {
@@ -56,6 +57,10 @@ def test_supported_method_computes_correlation_matrix(method):
 
     matrix = result[0]["correlation_matrix"]
     assert matrix.loc["sensor_a", "sensor_b"] == pytest.approx(1.0)
+
+
+def test_supported_methods_match_service_contract():
+    assert VALID_METHODS == {"pearson", "spearman"}
 
 
 def test_sign_reversal_between_strong_correlations_is_high():

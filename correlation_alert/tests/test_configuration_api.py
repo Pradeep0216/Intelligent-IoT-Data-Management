@@ -41,18 +41,6 @@ def test_api_returns_documented_correlation_defaults(client):
     }
 
 
-def test_api_rejects_method_outside_http_contract(client):
-    payload = _payload()
-    payload["method"] = "kendall"
-    response = client.post(
-        "/detect-correlation-alert",
-        json=payload,
-    )
-
-    assert response.status_code == 400
-    assert response.get_json()["error_type"] == "invalid_input"
-
-
 def test_api_accepts_signed_correlation_threshold_boundaries(client):
     payload = _payload()
     payload["strong_corr_threshold"] = 1

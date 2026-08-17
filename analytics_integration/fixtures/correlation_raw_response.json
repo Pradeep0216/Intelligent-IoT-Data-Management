@@ -10,29 +10,29 @@
   "correlations": [
     {
       "window_index": 1,
-      "metric_a": "temperature",
-      "metric_b": "pressure",
+      "stream_1": "temperature",
+      "stream_2": "pressure",
       "correlation": 0.89
     }
   ],
   "changes": [
     {
       "window_index": 2,
-      "metric_a": "temperature",
-      "metric_b": "pressure",
-      "previous_correlation": 0.89,
-      "current_correlation": 0.82,
+      "stream_1": "temperature",
+      "stream_2": "pressure",
+      "previous_corr": 0.89,
+      "current_corr": 0.82,
       "delta": 0.07,
       "alert_level": null
     },
     {
       "window_index": 4,
-      "metric_a": "temperature",
-      "metric_b": "pressure",
-      "timestamp": "2026-08-05T08:25:00Z",
-      "window_start": "2026-08-05T08:20:00Z",
-      "previous_correlation": 0.91,
-      "current_correlation": 0.12,
+      "stream_1": "temperature",
+      "stream_2": "pressure",
+      "start_time": "2026-08-05T08:20:00Z",
+      "end_time": "2026-08-05T08:25:00Z",
+      "previous_corr": 0.91,
+      "current_corr": 0.12,
       "delta": 0.79,
       "alert_level": "HIGH"
     }
@@ -40,15 +40,15 @@
   "alerts": [
     {
       "window_index": 4,
-      "metric_a": "temperature",
-      "metric_b": "pressure",
-      "timestamp": "2026-08-05T08:25:00Z",
-      "window_start": "2026-08-05T08:20:00Z",
-      "previous_correlation": 0.91,
-      "current_correlation": 0.12,
+      "stream_1": "temperature",
+      "stream_2": "pressure",
+      "start_time": "2026-08-05T08:20:00Z",
+      "end_time": "2026-08-05T08:25:00Z",
+      "previous_corr": 0.91,
+      "current_corr": 0.12,
       "delta": 0.79,
       "alert_level": "HIGH",
-      "message": "Correlation between temperature and pressure changed by 0.79."
+      "reason": "Correlation between temperature and pressure changed by 0.79."
     }
   ]
 }

@@ -1,3 +1,5 @@
+import math
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pandas as pd
@@ -31,18 +33,22 @@ def parse_positive_int(value, name):
             or is less than/equal to zero.
     """
     try:
-        parsed = int(value)
+        parsed_number = float(value)
     except (TypeError, ValueError):
         raise InputValidationError(
             f"'{name}' must be a positive integer."
         )
 
-    if parsed <= 0:
+    if (
+        not math.isfinite(parsed_number)
+        or not parsed_number.is_integer()
+        or parsed_number <= 0
+    ):
         raise InputValidationError(
             f"'{name}' must be a positive integer."
         )
 
-    return parsed
+    return int(parsed_number)
 
 
 def parse_correlation_threshold(value, name):
@@ -59,7 +65,7 @@ def parse_correlation_threshold(value, name):
             f"'{name}' must be a number between -1 and 1."
         )
 
-    if parsed < -1 or parsed > 1:
+    if not math.isfinite(parsed) or parsed < -1 or parsed > 1:
         raise InputValidationError(
             f"'{name}' must be between -1 and 1."
         )
@@ -83,7 +89,7 @@ def parse_delta_threshold(value):
             "'delta_threshold' must be a number between 0 and 2."
         )
 
-    if parsed < 0 or parsed > 2:
+    if not math.isfinite(parsed) or parsed < 0 or parsed > 2:
         raise InputValidationError(
             "'delta_threshold' must be between 0 and 2."
         )

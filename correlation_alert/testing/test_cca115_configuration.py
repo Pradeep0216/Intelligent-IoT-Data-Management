@@ -130,6 +130,66 @@ def test_invalid_method_returns_400(client):
     assert "method" in payload["message"]
 
 
+def test_valid_spearman_returns_200(client):
+    response = client.post(
+        "/detect-correlation-alert",
+        data=multipart_request(method="spearman"),
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "success"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "strong_corr_threshold",
+        "weak_corr_threshold",
+        "delta_threshold",
+    ],
+)
+def test_nan_threshold_returns_400(client, field):
+    response = client.post(
+        "/detect-correlation-alert",
+        data=multipart_request(**{field: "nan"}),
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error_type"] == "invalid_input"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "window_size",
+        "step_size",
+    ],
+)
+def test_json_fractional_size_returns_400(client, field):
+    dataframe = pd.read_csv(make_csv())
+    body = {
+        "data": dataframe.to_dict(orient="records"),
+        "timestamp_col": "timestamp",
+        "selected_streams": [
+            "sensor_a",
+            "sensor_b",
+            "sensor_c",
+        ],
+        "method": "pearson",
+        field: 1.5,
+    }
+
+    response = client.post(
+        "/detect-correlation-alert",
+        json=body,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error_type"] == "invalid_input"
+
+
 @pytest.mark.parametrize(
     "value",
     [

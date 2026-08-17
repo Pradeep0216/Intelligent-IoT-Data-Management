@@ -314,6 +314,6 @@ The API validates configuration before running the correlation pipeline.
 - `step_size` must be a positive integer.
 - `strong_corr_threshold` must be between `-1` and `1`.
 - `weak_corr_threshold` must be between `-1` and `1`.
-- `delta_threshold` must be between `-1` and `1`.
+- `delta_threshold` must be between `0` and `2`.
 - `weak_corr_threshold` must be less than `strong_corr_threshold`.
 - Invalid configuration returns HTTP `400 Bad Request`.

@@ -1,11 +1,10 @@
 {
   "summary": {
-    "total_windows_evaluated": 12,
-    "metrics_analyzed": [
-      "temperature",
-      "pressure"
-    ],
-    "alerts_triggered": 1
+    "processed_rows": 100,
+    "windows": 12,
+    "correlation_results": 12,
+    "changes": 2,
+    "alerts": 1
   },
   "correlations": [
     {

@@ -87,6 +87,11 @@ def adapt_models_output(
 
     The shared response envelope is created separately by the
     Analytics Integration shared envelope builder.
+
+    The runtime value represents the execution time of the
+    complete Models detector batch. When multiple alerts are
+    generated, the same batch runtime is included in each
+    alert's supporting values.
     """
 
     if not isinstance(model_result, dict):
@@ -147,7 +152,9 @@ def adapt_models_output(
         raise ValueError(
             "runtime cannot be None."
         )
-
+ # runtime represents the execution time of the complete
+ # Models detector batch, not an individual alert.
+ # The batch runtime is included in each generated alert.
     try:
         runtime_ms = round(
             float(runtime) * 1000,
@@ -280,14 +287,4 @@ def adapt_models_output(
 
         alerts.append(alert)
 
-    # return alerts
-    # returns a contract instead of a raw data. updated to make it suitable for the runnable code
-    return {
-        "status": "success",
-        "alerts": alerts,
-        "summary": {
-            "alert_count": len(alerts),
-            "processed_items": len(model_result["timestamp"])
-        },
-        "errors": []
-    }
+    return alerts

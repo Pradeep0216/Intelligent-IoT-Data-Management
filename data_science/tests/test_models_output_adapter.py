@@ -36,9 +36,15 @@ def test_single_anomaly_conversion():
         "runtime": 0.024,
     }
 
+    context = {
+        "entity_id": "sensor_node_01",
+        "metrics": ["temperature"],
+        "sensor_values": [29.8, 31.8],
+    }
+
     result = adapt_models_output(
         model_result,
-        sample_context(),
+        context,
     )
 
     assert len(result) == 1
@@ -111,9 +117,15 @@ def test_no_anomalies_returns_empty_list():
         "runtime": 0.024,
     }
 
+    context = {
+        "entity_id": "sensor_node_01",
+        "metrics": ["temperature"],
+        "sensor_values": [29.8, 31.8],
+    }
+
     result = adapt_models_output(
         model_result,
-        sample_context(),
+        context,
     )
 
     assert result == []
@@ -281,6 +293,29 @@ def test_runtime_conversion():
     )
 
 
+def test_invalid_runtime():
+
+    model_result = {
+        "model_name": "IsolationForest",
+        "timestamp": [
+            "2026-08-05T08:20:00Z",
+        ],
+        "anomaly_flag": [
+            True,
+        ],
+        "score": [
+            0.91,
+        ],
+        "runtime": "invalid",
+    }
+
+    with pytest.raises(ValueError):
+        adapt_models_output(
+            model_result,
+            sample_context(),
+        )
+
+
 def test_json_serializable():
 
     model_result = {
@@ -381,4 +416,94 @@ def test_threshold_optional():
     assert (
         "threshold"
         not in result[0]["supporting_values"]
+    )
+
+
+def test_draft_v0_1_fields():
+
+    model_result = {
+        "model_name": "IsolationForest",
+        "timestamp": [
+            "2026-08-05T08:20:00Z",
+        ],
+        "anomaly_flag": [
+            True,
+        ],
+        "score": [
+            0.91,
+        ],
+        "runtime": 0.024,
+    }
+
+    context = {
+        "entity_id": "sensor_node_01",
+        "metrics": ["temperature"],
+        "sensor_values": [31.8],
+    }
+
+    result = adapt_models_output(
+        model_result,
+        context,
+    )
+
+    alert = result[0]
+
+    assert "timestamp" in alert
+    assert alert["alert_type"] == "POINTWISE_ANOMALY"
+    assert "target" in alert
+    assert "method" in alert
+    assert "message" in alert
+    assert "source" in alert
+
+    assert alert["source"]["component"] == "models"
+    assert alert["target"]["entity_id"] == "sensor_node_01"
+    assert alert["target"]["metrics"] == ["temperature"]
+
+
+def test_batch_runtime_is_preserved_in_each_alert():
+    """
+    Verify that the detector runtime represents the complete
+    Models batch runtime and is preserved in each generated alert.
+    """
+
+    model_result = {
+        "model_name": "IsolationForest",
+        "timestamp": [
+            "2026-08-05T08:20:00Z",
+            "2026-08-05T08:21:00Z",
+        ],
+        "anomaly_flag": [
+            True,
+            True,
+        ],
+        "score": [
+            0.91,
+            0.95,
+        ],
+        "runtime": 0.024,
+    }
+
+    context = {
+        "entity_id": "sensor_node_01",
+        "metrics": ["temperature"],
+        "sensor_values": [31.8, 33.1],
+    }
+
+    result = adapt_models_output(
+        model_result,
+        context,
+    )
+
+    assert len(result) == 2
+
+    # runtime is the complete detector batch runtime,
+    # so the same value is included in each generated alert.
+    assert (
+        result[0]["supporting_values"]["runtime_ms"]
+        == 24.0
+    )
+
+    assert (
+        result[1]["supporting_values"]["runtime_ms"]
+        == 24.0
     )

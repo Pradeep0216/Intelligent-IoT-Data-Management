@@ -1,6 +1,6 @@
 import pandas as pd
 
-from detectors.isolation_forest_detector import IsolationForestDetector
+from detectors.iforest_detector import IsolationForestDetector
 
 
 def run_detector(detector_name, dataframe, parameters=None):

@@ -1,25 +1,31 @@
 """
-input_validator.py (v4 — Week 5, rebased onto the merged v3 base per Lucas's PR #5 review)
+input_validator.py (v3 — Week 4 PR, review round 1)
 Shared input validator for the Models sub-team pipeline.
 
-Built on the Week 4 v3 validator (merged into main via PR #3):
-  - Supports a DatetimeIndex as well as a timestamp column.
-  - min_readings parameter (min_rows kept as a deprecated alias).
-  - Numeric-time handling matches preprocessor.py's actual behaviour: falls
-    back to a synthesized datetime index (2024-01-01, 1 row/second) when no
-    literal timestamp column is present, instead of mis-parsing 1970-epoch
-    dates or rejecting the data outright.
+v3 changes (addressing Lucas's review of PR #3):
+  - Supports a DatetimeIndex as well as a timestamp column, since the task
+    asks for "timestamp or datetime index" and existing Models preprocessing
+    already hands off data indexed by timestamp/time.
+  - Renamed min_rows -> min_readings to match the task wording ("minimum
+    number of readings, where required"). min_rows kept as a deprecated
+    alias for backward compatibility.
+  - Numeric-time handling now matches preprocessor.py's actual behaviour:
+    preprocessor.py only ever parses a column literally named 'timestamp' as
+    real calendar time. If that column isn't present (e.g. only a numeric
+    'time' column, as in datasets/complex.csv), it does NOT try to interpret
+    the numeric values as time at all -- it fabricates a fresh, evenly-spaced
+    datetime index (2024-01-01, 1 row/second) instead. validate_input() now
+    does the same thing when no literal timestamp column is found, rather
+    than either silently mis-parsing 1970-epoch dates (the original bug) or
+    rejecting the data outright.
+  - One deliberate difference from preprocessor.py, called out for review:
+    the original non-timestamp numeric column (e.g. 'time') is DROPPED
+    entirely in this synthesized-index path, rather than being left in and
+    silently treated as a sensor value. preprocessor.py currently leaves it
+    in (it flows into the scaler along with real sensor columns), which
+    looks unintentional -- flagging this rather than silently reproducing it.
 
-v4 additions (Week 5 — "lock the input boundary", carried forward from the
-Week 5 branch and rebased onto the merged v3 base):
-  - sensor_id / sensor_id_col support: tag results with a sensor identifier,
-    either a single constant ID for the whole dataset (sensor_id) or a
-    per-row column (sensor_id_col). Mutually exclusive.
-  - sensor_id_col now normalises to a column literally named 'sensor_id' in
-    the output, matching the documented contract (addresses Lucas's PR #5
-    review point: previously the original column name was kept as-is).
-
-Owner: Deepakkumar Govindan (Week 5 — Input boundary validator + pipeline integration)
+Owner: Deepakkumar Govindan (Week 4 — Shared Input Validator, PR #3)
 """
 
 import pandas as pd
@@ -50,7 +56,7 @@ def validate_input(
     timestamp_is_index: bool = False,
 ) -> pd.DataFrame:
     """
-    Validate a raw sensor data DataFrame against the shared Models input format (v4).
+    Validate a raw sensor data DataFrame against the shared Models input format (v3).
 
     Accepts a timestamp in any of these forms:
       1. df already has a pandas DatetimeIndex -- used directly.
@@ -73,9 +79,7 @@ def validate_input(
         accepted as a deprecated alias for backward compatibility.)
       sensor_id / sensor_id_col: tag results with a sensor identifier, either a
         single constant ID for the whole dataset, or a per-row column. Mutually
-        exclusive. If sensor_id_col is provided, the output column is
-        normalised to be named 'sensor_id' regardless of the original column
-        name.
+        exclusive.
       timestamp_is_index: acknowledges that a column literally named
         `timestamp_col` is actually a numeric sample index, not real time --
         needed only when that column happens to be named exactly
@@ -84,9 +88,6 @@ def validate_input(
 
     Returns:
       A validated copy of the DataFrame, sorted by timestamp and indexed by it.
-      If sensor_id / sensor_id_col was provided, a 'sensor_id' column is
-      present (constant value for sensor_id, normalised passthrough for
-      sensor_id_col).
 
     Raises:
       InputValidationError with a specific, readable message describing exactly
@@ -187,14 +188,9 @@ def validate_input(
         exclude_cols = set()
 
     if sensor_id_col is not None:
+        exclude_cols.add(sensor_id_col)
         if df[sensor_id_col].isna().any():
             raise InputValidationError(f"Missing sensor IDs found in column '{sensor_id_col}'")
-        # v4 fix (Week 5, addressing Lucas's review of PR #5): normalise to a
-        # column literally named 'sensor_id', matching the documented
-        # contract, instead of keeping the original column name.
-        if sensor_id_col != "sensor_id":
-            df = df.rename(columns={sensor_id_col: "sensor_id"})
-        exclude_cols.add("sensor_id")
 
     if sensor_cols is None:
         sensor_cols = [c for c in df.columns if c not in exclude_cols]
@@ -287,28 +283,6 @@ if __name__ == "__main__":
     bad_missing.loc[1, "s1"] = None
     try:
         validate_input(bad_missing)
-        print("FAILED")
-    except InputValidationError as e:
-        print(f"REJECTED correctly: {e}\n")
-
-    print("=== Test 9: sensor_id constant tag (Week 5) ===")
-    r9 = validate_input(good, sensor_id="temperature_sensor_01")
-    print(r9)
-    assert "sensor_id" in r9.columns
-    print("PASSED\n")
-
-    print("=== Test 10: sensor_id_col normalises to a 'sensor_id' column (v4 fix, Week 5) ===")
-    with_device_col = good.copy()
-    with_device_col["device_id"] = "sensor_A"
-    r10 = validate_input(with_device_col, sensor_id_col="device_id")
-    print(r10)
-    assert "sensor_id" in r10.columns, "FAILED: sensor_id column not present"
-    assert "device_id" not in r10.columns, "FAILED: original column name still present"
-    print("PASSED (original 'device_id' column renamed to standard 'sensor_id')\n")
-
-    print("=== Test 11: sensor_id/sensor_id_col mutual exclusivity (regression check) ===")
-    try:
-        validate_input(with_device_col, sensor_id="x", sensor_id_col="device_id")
         print("FAILED")
     except InputValidationError as e:
         print(f"REJECTED correctly: {e}")

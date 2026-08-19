@@ -10,21 +10,21 @@ model_result = {
         "2026-08-05T08:20:00Z",
         "2026-08-05T08:21:00Z",
         "2026-08-05T08:22:00Z",
-        "2026-08-05T08:23:00Z"
+        "2026-08-05T08:23:00Z",
     ],
     "anomaly_flag": [
         False,
         True,
         False,
-        True
+        True,
     ],
     "score": [
         0.12,
         0.91,
         0.18,
-        0.95
+        0.95,
     ],
-    "runtime": 0.024  # seconds
+    "runtime": 0.024,  # seconds
 }
 
 
@@ -32,7 +32,7 @@ model_result = {
 input_context = {
     "entity_id": "sensor_node_01",
     "metrics": ["temperature"],
-    "sensor_values": [29.8, 31.8, 30.1, 33.1]
+    "sensor_values": [29.8, 31.8, 30.1, 33.1],
 }
 
 
@@ -42,7 +42,10 @@ print(json.dumps(model_result, indent=4))
 
 
 # --- RUN ADAPTER ---
-adapted_output = adapt_models_output(model_result, input_context)
+adapted_output = adapt_models_output(
+    model_result,
+    input_context,
+)
 
 
 # --- PRINT ADAPTED OUTPUT ---
@@ -52,22 +55,42 @@ print(json.dumps(adapted_output, indent=4))
 
 # --- SUMMARY CHECK ---
 print("\n================ SUMMARY CHECK ================\n")
-print(f"Total alerts generated: {adapted_output['summary']['alert_count']}")
+print(f"Total alerts generated: {len(adapted_output)}")
 
 
-# -- GENERATE MAPPING TABLE --
+# --- GENERATE MAPPING TABLE ---
 def print_mapping_table():
     print("\n================ FIELD MAPPING TABLE ================\n")
 
     mapping = [
         ("model_name", "method", "Direct mapping"),
         ("timestamp", "timestamp", "Converted to ISO 8601"),
-        ("anomaly_flag", "alerts inclusion", "Only True values produce alerts"),
+        (
+            "anomaly_flag",
+            "alerts inclusion",
+            "Only True values produce alerts",
+        ),
         ("score", "score", "Preserved raw"),
-        ("runtime", "supporting_values.runtime_ms", "seconds → milliseconds"),
-        ("input_context.metrics", "target.metrics", "Passed from caller"),
-        ("input_context.entity_id", "target.entity_id", "Passed from caller"),
-        ("sensor_values", "supporting_values.sensor_value", "Optional inclusion")
+        (
+            "runtime",
+            "supporting_values.runtime_ms",
+            "seconds → milliseconds",
+        ),
+        (
+            "input_context.metrics",
+            "target.metrics",
+            "Passed from caller",
+        ),
+        (
+            "input_context.entity_id",
+            "target.entity_id",
+            "Passed from caller",
+        ),
+        (
+            "sensor_values",
+            "supporting_values.sensor_value",
+            "Optional inclusion",
+        ),
     ]
 
     print("| Raw Models field | Draft V0.1 field | Conversion |")
@@ -77,5 +100,5 @@ def print_mapping_table():
         print(f"| {raw} | {target} | {conv} |")
 
 
-# CALL IT
+# --- CALL MAPPING TABLE ---
 print_mapping_table()

@@ -1,238 +1,190 @@
-# Correlation Change Alert — Operational Runbook
+# Correlation Alert Operational Runbook:
 
-**Owner:** Guna Varshith Kanagala
-**Ticket:** CCA121
-**Applies to:** `correlation_alert/` Flask service
+Owner: Guna Varshith Kanagala
 
-This runbook is written for whoever is running the service during a demo or after
-deployment, not for the person who wrote it. It covers how to start the service,
-how to tell whether it is actually working, how to read its logs, and what to do
-about the failures that have actually happened so far.
+Task: CCA121
 
----
+Use this runbook during local testing, an MVP demo, or deployment recovery.
 
-## 1. What this service does
-
-It reads time-series sensor data, computes correlation between selected streams
-over rolling windows, and raises an alert when the correlation between a pair of
-streams changes by more than a threshold between consecutive windows.
-
-Two endpoints:
+## Service endpoints:
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/service-status` | GET | Health and readiness |
-| `/detect-correlation-alert` | POST | Run the analysis |
+| `/service-status` | GET | Check liveness and readiness. |
+| `/detect-correlation-alert` | POST | Run correlation analysis. |
 
----
+## Prerequisites:
 
-## 2. Configuration
+1. Use Python 3.13.
+2. Run commands from the repository root.
+3. Install `correlation_alert/requirements.txt`.
 
-Every setting is an environment variable with a working default, so the service
-starts with no configuration at all. Nothing here is a secret.
+## Install and start:
+
+On macOS or Linux:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r correlation_alert/requirements.txt
+python -m correlation_alert.server
+```
+
+On Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r correlation_alert/requirements.txt
+python -m correlation_alert.server
+```
+
+The default address is `http://127.0.0.1:5001`.
+
+## Runtime settings:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CORRELATION_HOST` | `127.0.0.1` | Interface to bind |
-| `CORRELATION_PORT` | `5001` | Port to bind |
-| `CORRELATION_SERVICE_URL` | `http://<host>:<port>` | Address other services should use |
-| `CORRELATION_TIMEOUT_SECONDS` | `30` | Runtime budget; slower requests are logged as slow |
-| `CORRELATION_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
-| `CORRELATION_LOG_FILE` | *(unset)* | If set, also write logs to this UTF-8 file |
-| `CORRELATION_DEBUG` | `false` | Flask debug mode |
+| `CORRELATION_HOST` | `127.0.0.1` | Network interface used by Flask. |
+| `CORRELATION_PORT` | `5001` | Flask port. |
+| `CORRELATION_SERVICE_URL` | Built from host and port | Address used by other services. |
+| `CORRELATION_TIMEOUT_SECONDS` | `30` | Runtime budget before a slow warning. |
+| `CORRELATION_LOG_LEVEL` | `INFO` | Minimum log level. |
+| `CORRELATION_LOG_FILE` | Empty | Optional UTF-8 log file. |
+| `CORRELATION_DEBUG` | `false` | Flask debug mode. |
 
-The active configuration is printed at startup and is also returned by
-`/service-status` under `config`, so there is never any guessing about which
-settings a running instance picked up.
+Example on macOS or Linux:
 
----
-
-## 3. Startup
-
-From `correlation_alert/`, with the virtual environment active:
-
-```
-.venv\Scripts\Activate.ps1
-python server.py
+```bash
+export CORRELATION_PORT=5002
+export CORRELATION_LOG_FILE=correlation.log
+python -m correlation_alert.server
 ```
 
-A healthy start looks like this:
+Example on Windows PowerShell:
 
-```
-[STARTUP] Correlation Alert Service starting
-[STARTUP] service_url=http://127.0.0.1:5001
-[STARTUP] request_timeout_seconds=30
-[STARTUP] log_level=INFO
-[STARTUP] log_file=None
-[STARTUP] debug=False
- * Running on http://127.0.0.1:5001
+```powershell
+$env:CORRELATION_PORT="5002"
+$env:CORRELATION_LOG_FILE="correlation.log"
+python -m correlation_alert.server
 ```
 
-To run on a different port, or to capture logs to a file:
+## Health and readiness:
 
-```
-$env:CORRELATION_PORT="5002"; python server.py
-$env:CORRELATION_LOG_FILE="run.log"; python server.py
-```
+Run:
 
-Clear an override with `$env:NAME=$null`.
-
----
-
-## 4. Health check
-
-```
-GET http://127.0.0.1:5001/service-status
+```bash
+curl http://127.0.0.1:5001/service-status
 ```
 
-| Response | Meaning | Action |
-| --- | --- | --- |
-| `200` with `"ready": true` | Service is up and the pipeline executes | None |
-| `503` with `"ready": false` | Service is up but cannot serve requests | See section 6.6 |
-| No response at all | Process is not running | See section 6.1 |
+HTTP `200` with `"ready": true` means the dependencies loaded and the pipeline self check passed.
 
-The endpoint does not simply report that the process answered. It runs a small
-synthetic dataset through the real pipeline before reporting healthy, so a green
-result means the analysis path works rather than only that Flask is listening.
+HTTP `503` with `"ready": false` means the process is live but cannot safely serve analysis requests. Read the `checks` object to find the failed component.
 
-It also reports the installed `pandas` and `numpy` versions under `checks.dependencies`.
-This matters because library versions differ in how they treat missing values and
-zero-variance windows in rolling correlation, so two hosts on different versions
-can produce different alert counts from the same file. Check these first when two
-people disagree about a result.
+The response also reports the active non-secret configuration and installed Pandas and NumPy versions.
 
----
+## Log format:
 
-## 5. Reading the logs
+Each line contains a timestamp, level, logger name, and structured fields.
 
-Every analysis request is assigned an eight-character request ID that appears on
-every line for that request and is returned to the caller in the response body as
-`request_id`. When someone reports a problem, ask for that ID.
+Startup example:
 
-A successful request:
-
-```
-[f22ed400] received source=file rows_in=1008 streams=['s1', 's2', 's3'] window_size=20 step_size=10 method=pearson
-[f22ed400] completed rows_out=1008 windows=99 changes=294 alerts=19 imputed=0 coerced=0 runtime_ms=45
+```text
+2026-08-18T06:30:00 INFO correlation.api event=startup service_url=http://127.0.0.1:5001 timeout_seconds=30 log_level=INFO log_file=None debug=False
 ```
 
-A rejected request:
+Successful request example:
 
-```
-[5c9063f9] invalid_input after 2ms: Requested stream(s) not found in the uploaded file: ['s99']. Available columns: ['time', 's1', 's2', 's3']
-```
-
-Log levels:
-
-| Level | Used for |
-| --- | --- |
-| `INFO` | Normal progress, request received and completed |
-| `WARNING` | Data was dropped or altered, or a request was rejected |
-| `ERROR` | Unhandled failure, or the health check failed |
-
-Set `CORRELATION_LOG_LEVEL=WARNING` during a demo to show only problems.
-
-**What is deliberately not logged:** the contents of uploaded files. Row counts,
-column names and parameters are recorded; the sensor readings themselves are not.
-
----
-
-## 6. Common failures and recovery
-
-### 6.1 Service does not start — `ModuleNotFoundError: No module named 'flask'`
-
-The virtual environment is not active. Look for `(.venv)` at the start of the
-prompt. If it is missing:
-
-```
-.venv\Scripts\Activate.ps1
+```text
+2026-08-18T06:31:00 INFO correlation.api request_id=f22ed400 event=received source=file rows_in=1008 streams=s1,s2,s3 window_size=20 step_size=10 method=pearson
+2026-08-18T06:31:00 INFO correlation.api request_id=f22ed400 event=completed rows_out=1008 windows=99 alerts=19 runtime_ms=45
 ```
 
-### 6.2 Activation is blocked — `running scripts is disabled on this system`
+Rejected request example:
 
-Windows blocks unsigned scripts by default. Run once per user account, answer `Y`:
-
-```
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```text
+2026-08-18T06:32:00 WARNING correlation.api request_id=5c9063f9 event=failed error_type=invalid_input runtime_ms=2 message=Selected streams were not found
 ```
 
-### 6.3 Port already in use — `Address already in use`
+Internal failures log the exception class. They do not log the exception message because it could contain uploaded data.
 
-Another instance is still running. Either stop it, or start on another port:
+The service never logs raw sensor readings or uploaded file contents.
 
-```
-$env:CORRELATION_PORT="5002"; python server.py
-```
+## Common failures:
 
-### 6.4 `400` with `"error_type": "invalid_input"`
+### Missing dependency:
 
-The caller's request is wrong, not the service. The message names the problem
-explicitly, including which columns the uploaded file actually contains. Common
-causes:
+Symptom:
 
-- A stream name that is not in the file. Compare against the `Available columns`
-  list in the message.
-- A timestamp column that cannot be parsed at all, leaving no usable rows.
-
-No service restart is needed. Fix the request and resend.
-
-### 6.5 `400` with a missing parameter message
-
-`timestamp_col` or `selected_streams` was not supplied. Both are required.
-
-### 6.6 `503` from `/service-status`
-
-The process is alive but the pipeline self-test failed. Read the `checks` object
-in the response, which names the failing check and the error. Usual causes are a
-broken or partial dependency install, or a code change that raises on import.
-
-```
-pip install -r ..\requirements.txt
+```text
+ModuleNotFoundError: No module named 'flask'
 ```
 
-Then restart and check again.
+Recovery:
 
-Note: `flask`, `flask-cors` and `requests` were missing from `requirements.txt`
-until CCA121, so an environment built from that file before then will install the
-analysis libraries but not the web framework, and the service will fail to start
-with `ModuleNotFoundError: No module named 'flask'`. If you hit that on an older
-environment, reinstall from the current file.
-
-### 6.7 A request returns `200` but the numbers look wrong
-
-Check `summary` in the response and the `completed` log line for that request ID:
-
-- `rows_out` much lower than `rows_in` means rows were dropped during cleaning.
-  The `WARNING` lines for that request say how many and why.
-- `imputed` or `coerced` above zero means some values in the result were
-  reconstructed rather than measured.
-- `alerts: 0` with `windows: 0` means nothing was analysed at all.
-
-Historically the service could return `200` with zero rows and report the run as
-successful. That is no longer possible: an empty result after cleaning now raises
-an error rather than reporting success.
-
-### 6.8 A request is slow
-
-Requests exceeding `CORRELATION_TIMEOUT_SECONDS` are logged as:
-
-```
-[<id>] slow request: runtime_ms=<n> exceeded budget of 30s
+```bash
+python -m pip install -r correlation_alert/requirements.txt
 ```
 
-The request still completes. Runtime scales with row count and with the number of
-windows, so a smaller `window_size` with a small `step_size` produces more windows
-and takes longer.
+Restart the service.
 
----
+### Port already in use:
 
-## 7. Escalation
+Stop the old process or choose another port.
 
-If the service is healthy but results are disputed, capture and share:
+```bash
+export CORRELATION_PORT=5002
+python -m correlation_alert.server
+```
 
-1. The `request_id` from the response
-2. The `received` and `completed` log lines for that ID
-3. The `checks.dependencies` block from `/service-status`
+### HTTP 400:
 
-Those three together identify the input parameters, what the pipeline did with
-them, and the library versions used, which is enough to reproduce the run.
+The request is invalid. Read `message` in the response, correct the fields, and resend it. A restart is not required.
+
+Common causes include a missing timestamp column, fewer than two unique streams, unsupported methods, invalid window sizes, and invalid thresholds.
+
+### HTTP 503:
+
+Read `checks.dependencies` and `checks.pipeline` in the status response.
+
+Reinstall the pinned dependencies if a dependency check fails. Run the automated tests if the pipeline check fails.
+
+```bash
+python -m pytest correlation_alert/tests -q
+```
+
+### HTTP 500:
+
+Copy the `request_id` from the response. Find the matching `event=failed` log. Record the exception class and the commit SHA.
+
+Do not share uploaded sensor data unless the dataset owner approves it.
+
+### Slow request:
+
+A request over `CORRELATION_TIMEOUT_SECONDS` completes normally but produces `event=slow`.
+
+Runtime increases with row count, stream count, and number of rolling windows. Increase `step_size` or reduce the input size for a quick demo.
+
+### Unexpected analysis result:
+
+Check `summary` and `data_quality` in the response. These fields report processed rows, coercions, imputation, outlier replacement, skipped pairs, windows, and alerts.
+
+Also record `checks.dependencies` from `/service-status`. Different library versions can produce different numeric results.
+
+## Safe restart:
+
+1. Stop Flask with `Ctrl+C`.
+2. Clear incorrect environment overrides.
+3. Start the service again from the repository root.
+4. Confirm HTTP `200` from `/service-status`.
+5. Send one known test request.
+
+## Escalation evidence:
+
+Capture these items:
+
+1. Commit SHA.
+2. Response `request_id`.
+3. Matching request log lines.
+4. The `checks` object from `/service-status`.
+5. Dataset name and row count. Do not attach raw data without approval.

@@ -1,161 +1,191 @@
-import logging
-import math
 import time
 import uuid
 
+import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import pandas as pd
 
-import config
-from logging_setup import get_logger
-from main import detect_correlation_change_alert as run_correlation_pipeline
-from main import to_iso8601, with_iso_timestamps
-from preprocessing import InputValidationError
-
-
-app = Flask(__name__)
-CORS(app)
-
-logger = get_logger("api")
-
-DEFAULT_WINDOW_SIZE = 20
-DEFAULT_STEP_SIZE = 10
-DEFAULT_METHOD = "pearson"
-
-DEFAULT_STRONG_CORR_THRESHOLD = 0.7
-DEFAULT_WEAK_CORR_THRESHOLD = 0.4
-DEFAULT_DELTA_THRESHOLD = 0.3
-
-ALLOWED_CORRELATION_METHODS = {"pearson", "spearman"}
+from .correlation import (
+    DEFAULT_DELTA_THRESHOLD,
+    DEFAULT_HIGH_THRESHOLD,
+    DEFAULT_MEDIUM_THRESHOLD,
+    DEFAULT_METHOD,
+    DEFAULT_STEP_SIZE,
+    DEFAULT_STRONG_THRESHOLD,
+    DEFAULT_WEAK_THRESHOLD,
+    DEFAULT_WINDOW_SIZE,
+    validate_correlation_parameters,
+)
+from .main import detect_correlation_change_alert
+from .logging_config import get_logger
+from .preprocessing import InputValidationError
+from .serialization import serialize_correlation_results, with_iso_timestamps
+from .settings import load_settings
 
 
-def parse_positive_int(value, name):
-    """Convert a request value to a positive integer."""
+ALLOWED_API_METHODS = {"pearson", "spearman"}
+
+
+def _parse_integer(value, name):
+    if isinstance(value, bool):
+        raise InputValidationError(f"{name} must be an integer")
     try:
-        parsed_number = float(value)
-    except (TypeError, ValueError):
-        raise InputValidationError(
-            f"'{name}' must be a positive integer."
-        )
-
-    if (
-        not math.isfinite(parsed_number)
-        or not parsed_number.is_integer()
-        or parsed_number <= 0
-    ):
-        raise InputValidationError(
-            f"'{name}' must be a positive integer."
-        )
-
-    return int(parsed_number)
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise InputValidationError(f"{name} must be an integer") from exc
+    if not numeric.is_integer():
+        raise InputValidationError(f"{name} must be an integer")
+    return int(numeric)
 
 
-def parse_correlation_threshold(value, name):
-    """Convert and validate a correlation threshold in [-1, 1]."""
+def _parse_float(value, name):
+    if isinstance(value, bool):
+        raise InputValidationError(f"{name} must be numeric")
     try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        raise InputValidationError(
-            f"'{name}' must be a number between -1 and 1."
-        )
-
-    if not math.isfinite(parsed) or parsed < -1 or parsed > 1:
-        raise InputValidationError(
-            f"'{name}' must be between -1 and 1."
-        )
-
-    return parsed
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise InputValidationError(f"{name} must be numeric") from exc
 
 
-def parse_delta_threshold(value):
-    """Convert and validate an absolute correlation change in [0, 2]."""
+def _parse_frequency(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
     try:
-        parsed = float(value)
+        numeric = float(value)
     except (TypeError, ValueError):
-        raise InputValidationError(
-            "'delta_threshold' must be a number between 0 and 2."
-        )
-
-    if not math.isfinite(parsed) or parsed < 0 or parsed > 2:
-        raise InputValidationError(
-            "'delta_threshold' must be between 0 and 2."
-        )
-
-    return parsed
+        return str(value)
+    return int(numeric) if numeric.is_integer() else numeric
 
 
-def validate_method(method):
-    """Accept only correlation methods supported by the API contract."""
-    if method not in ALLOWED_CORRELATION_METHODS:
-        raise InputValidationError(
-            "'method' must be either 'pearson' or 'spearman'."
-        )
+def _parse_selected_streams(value):
+    if isinstance(value, str):
+        value = [item.strip() for item in value.split(",") if item.strip()]
+    if not isinstance(value, (list, tuple)):
+        raise InputValidationError("selected_streams must be a list or comma separated string")
+    return list(value)
 
+
+def _parse_method(value):
+    method = str(value).lower()
+    if method not in ALLOWED_API_METHODS:
+        raise InputValidationError("method must be either pearson or spearman")
     return method
 
 
-def validate_configuration(
-    window_size,
-    step_size,
-    strong_corr_threshold,
-    weak_corr_threshold,
-    delta_threshold,
-):
-    """Validate configurable correlation alert parameters."""
-    window_size = parse_positive_int(window_size, "window_size")
-    step_size = parse_positive_int(step_size, "step_size")
-    strong_corr_threshold = parse_correlation_threshold(
-        strong_corr_threshold,
-        "strong_corr_threshold",
+def parse_request_input():
+    """Read JSON or multipart data and return typed pipeline arguments."""
+    if "file" in request.files:
+        source = request.form
+        df = pd.read_csv(request.files["file"])
+    else:
+        source = request.get_json(silent=True)
+        if not isinstance(source, dict):
+            raise InputValidationError("Request body must be a JSON object")
+        data = source.get("data")
+        if data is None:
+            raise InputValidationError("Missing 'data' in request body")
+        df = pd.DataFrame(data)
+
+    df.columns = df.columns.str.strip()
+    timestamp_col = source.get("timestamp_col")
+    selected_streams = source.get("selected_streams")
+    if not timestamp_col:
+        raise InputValidationError("Missing 'timestamp_col'")
+    if selected_streams is None:
+        raise InputValidationError("Missing 'selected_streams'")
+
+    return {
+        "df": df,
+        "timestamp_col": timestamp_col,
+        "selected_streams": _parse_selected_streams(selected_streams),
+        "window_size": _parse_integer(source.get("window_size", DEFAULT_WINDOW_SIZE), "window_size"),
+        "step_size": _parse_integer(source.get("step_size", DEFAULT_STEP_SIZE), "step_size"),
+        "method": _parse_method(source.get("method", DEFAULT_METHOD)),
+        "strong_corr_threshold": _parse_float(
+            source.get("strong_corr_threshold", DEFAULT_STRONG_THRESHOLD),
+            "strong_corr_threshold",
+        ),
+        "weak_corr_threshold": _parse_float(
+            source.get("weak_corr_threshold", DEFAULT_WEAK_THRESHOLD),
+            "weak_corr_threshold",
+        ),
+        "delta_threshold": _parse_float(
+            source.get("delta_threshold", DEFAULT_DELTA_THRESHOLD),
+            "delta_threshold",
+        ),
+        "medium_threshold": _parse_float(
+            source.get("medium_threshold", DEFAULT_MEDIUM_THRESHOLD),
+            "medium_threshold",
+        ),
+        "high_threshold": _parse_float(
+            source.get("high_threshold", DEFAULT_HIGH_THRESHOLD),
+            "high_threshold",
+        ),
+        "sampling_frequency": _parse_frequency(source.get("sampling_frequency")),
+        "missing_method": source.get("missing_method", "interpolate"),
+        "iqr_factor": _parse_float(source.get("iqr_factor", 3.0), "iqr_factor"),
+    }
+
+
+def build_api_response(result, pipeline_arguments, request_id, runtime_ms):
+    """Build the stable JSON response from pipeline output."""
+    data_quality = result.get("data_quality", {})
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "runtime_ms": runtime_ms,
+        "configuration": {
+            name: pipeline_arguments[name]
+            for name in (
+                "window_size",
+                "step_size",
+                "method",
+                "strong_corr_threshold",
+                "weak_corr_threshold",
+                "delta_threshold",
+            )
+        },
+        "summary": {
+            "processed_rows": len(result["processed_data"]),
+            "windows": len(result["windows"]),
+            "correlation_results": len(result["correlation_results"]),
+            "changes": len(result["changes"]),
+            "alerts": len(result["alerts"]),
+            "skipped_pairs": len(result["skipped_pairs"]),
+            "non_numeric_values_coerced": data_quality.get("non_numeric_coerced", 0),
+            "missing_values_imputed": data_quality.get("missing_imputed", 0),
+        },
+        "data_quality": data_quality,
+        "correlations": serialize_correlation_results(result["correlation_results"]),
+        "alerts": with_iso_timestamps(result["alerts"]),
+        "changes": with_iso_timestamps(result["changes"]),
+        "skipped_pairs": with_iso_timestamps(result["skipped_pairs"]),
+    }
+
+
+def _run_pipeline_self_test():
+    """Run a small frame through the real analysis pipeline."""
+    frame = pd.DataFrame(
+        {
+            "time": range(30),
+            "sensor_a": [index % 7 for index in range(30)],
+            "sensor_b": [(index * 3) % 11 for index in range(30)],
+        }
     )
-    weak_corr_threshold = parse_correlation_threshold(
-        weak_corr_threshold,
-        "weak_corr_threshold",
+    detect_correlation_change_alert(
+        frame,
+        "time",
+        ["sensor_a", "sensor_b"],
+        window_size=10,
+        step_size=5,
+        method="pearson",
     )
-    delta_threshold = parse_delta_threshold(delta_threshold)
-
-    if weak_corr_threshold >= strong_corr_threshold:
-        raise InputValidationError(
-            "'weak_corr_threshold' must be less than "
-            "'strong_corr_threshold'."
-        )
-
-    return (
-        window_size,
-        step_size,
-        strong_corr_threshold,
-        weak_corr_threshold,
-        delta_threshold,
-    )
-
-
-def _run_pipeline_self_test() -> None:
-    """Run a small synthetic dataset through the real pipeline."""
-    frame = pd.DataFrame({
-        "time": range(30),
-        "a": [index % 7 for index in range(30)],
-        "b": [(index * 3) % 11 for index in range(30)],
-    })
-
-    pipeline_logger = logging.getLogger("correlation.preprocessing")
-    previous_level = pipeline_logger.level
-    pipeline_logger.setLevel(logging.WARNING)
-    try:
-        run_correlation_pipeline(
-            frame,
-            "time",
-            ["a", "b"],
-            10,
-            5,
-            "pearson",
-        )
-    finally:
-        pipeline_logger.setLevel(previous_level)
 
 
 def _readiness_checks():
-    """Return readiness and the result of each operational check."""
+    """Return readiness and diagnostic results for required components."""
     checks = {}
     ready = True
 
@@ -169,306 +199,174 @@ def _readiness_checks():
         }
     except Exception as exc:
         ready = False
-        checks["dependencies"] = {
-            "ok": False,
-            "error": str(exc),
-        }
+        checks["dependencies"] = {"ok": False, "error": str(exc)}
 
     try:
         _run_pipeline_self_test()
         checks["pipeline"] = {
             "ok": True,
-            "detail": "self-test run completed",
+            "detail": "self test completed",
         }
     except Exception as exc:
         ready = False
-        checks["pipeline"] = {
-            "ok": False,
-            "error": str(exc),
-        }
+        checks["pipeline"] = {"ok": False, "error": str(exc)}
 
     return ready, checks
 
 
-@app.route("/service-status", methods=["GET"])
-def service_status():
-    started_at = time.perf_counter()
-    ready, checks = _readiness_checks()
-    check_ms = int((time.perf_counter() - started_at) * 1000)
-
-    body = {
-        "status": "running" if ready else "degraded",
-        "message": (
-            "Correlation Alert Service is running."
-            if ready
-            else "Correlation Alert Service is running but not ready to serve requests."
-        ),
-        "service": "correlation-alert-api",
-        "live": True,
-        "ready": ready,
-        "checks": checks,
-        "check_duration_ms": check_ms,
-        "config": config.as_dict(),
-    }
-
-    if ready:
-        logger.info("[HEALTH] ready=True check_ms=%d", check_ms)
-    else:
-        failed = [
-            name
-            for name, check in checks.items()
-            if not check.get("ok")
-        ]
-        logger.error(
-            "[HEALTH] ready=False failed=%s check_ms=%d",
-            failed,
-            check_ms,
-        )
-
-    return jsonify(body), (200 if ready else 503)
+def log_startup(logger, service_settings):
+    """Log the active non-secret settings before Flask starts."""
+    logger.info(
+        "event=startup service_url=%s timeout_seconds=%d log_level=%s "
+        "log_file=%s debug=%s",
+        service_settings.service_url,
+        service_settings.request_timeout_seconds,
+        service_settings.log_level,
+        service_settings.log_file,
+        service_settings.debug,
+    )
 
 
-@app.route("/detect-correlation-alert", methods=["POST"])
-def detect_correlation_alert_api():
-    request_id = uuid.uuid4().hex[:8]
-    started_at = time.perf_counter()
+def create_app(service_settings=None):
+    """Create the Flask application for the correlation alert service."""
+    configured = service_settings or load_settings()
+    logger = get_logger("api", configured)
+    app = Flask(__name__)
+    app.config["SERVICE_SETTINGS"] = configured
+    CORS(app)
 
-    def elapsed_ms() -> int:
-        return int((time.perf_counter() - started_at) * 1000)
-
-    try:
-        if "file" in request.files:
-            source = "file"
-            uploaded_file = request.files["file"]
-            dataframe = pd.read_csv(uploaded_file)
-            dataframe.columns = dataframe.columns.str.strip()
-
-            timestamp_col = request.form.get("timestamp_col")
-            selected_streams = request.form.get("selected_streams")
-            window_size = request.form.get(
-                "window_size",
-                DEFAULT_WINDOW_SIZE,
-            )
-            step_size = request.form.get(
-                "step_size",
-                DEFAULT_STEP_SIZE,
-            )
-            method = request.form.get("method", DEFAULT_METHOD)
-            strong_corr_threshold = request.form.get(
-                "strong_corr_threshold",
-                DEFAULT_STRONG_CORR_THRESHOLD,
-            )
-            weak_corr_threshold = request.form.get(
-                "weak_corr_threshold",
-                DEFAULT_WEAK_CORR_THRESHOLD,
-            )
-            delta_threshold = request.form.get(
-                "delta_threshold",
-                DEFAULT_DELTA_THRESHOLD,
-            )
+    @app.get("/service-status")
+    def service_status():
+        started_at = time.perf_counter()
+        ready, checks = _readiness_checks()
+        check_duration_ms = int((time.perf_counter() - started_at) * 1000)
+        body = {
+            "status": "running" if ready else "degraded",
+            "message": (
+                "Correlation Alert Service is running."
+                if ready
+                else "Correlation Alert Service is running but is not ready."
+            ),
+            "service": "correlation-alert-api",
+            "live": True,
+            "ready": ready,
+            "checks": checks,
+            "check_duration_ms": check_duration_ms,
+            "config": configured.as_dict(),
+        }
+        if ready:
+            logger.info("health ready=true check_ms=%d", check_duration_ms)
         else:
-            source = "json"
-            body = request.get_json(silent=True)
-            if body is None:
-                raise InputValidationError(
-                    "Request must contain either a CSV file or a valid JSON body."
+            logger.error("health ready=false check_ms=%d", check_duration_ms)
+        return jsonify(body), (200 if ready else 503)
+
+    @app.post("/detect-correlation-alert")
+    def detect_correlation_alert_api():
+        request_id = uuid.uuid4().hex[:8]
+        started_at = time.perf_counter()
+        request_source = "file" if "file" in request.files else "json"
+
+        def elapsed_ms():
+            return int((time.perf_counter() - started_at) * 1000)
+
+        try:
+            pipeline_arguments = parse_request_input()
+            logger.info(
+                "request_id=%s event=received source=%s rows_in=%d "
+                "streams=%s window_size=%d step_size=%d method=%s",
+                request_id,
+                request_source,
+                len(pipeline_arguments["df"]),
+                ",".join(pipeline_arguments["selected_streams"]),
+                pipeline_arguments["window_size"],
+                pipeline_arguments["step_size"],
+                pipeline_arguments["method"],
+            )
+            validate_correlation_parameters(
+                window_size=pipeline_arguments["window_size"],
+                step_size=pipeline_arguments["step_size"],
+                method=pipeline_arguments["method"],
+                strong_corr_threshold=pipeline_arguments["strong_corr_threshold"],
+                weak_corr_threshold=pipeline_arguments["weak_corr_threshold"],
+                delta_threshold=pipeline_arguments["delta_threshold"],
+                medium_threshold=pipeline_arguments["medium_threshold"],
+                high_threshold=pipeline_arguments["high_threshold"],
+            )
+            result = detect_correlation_change_alert(**pipeline_arguments)
+            runtime_ms = elapsed_ms()
+            logger.info(
+                "request_id=%s event=completed rows_out=%d windows=%d "
+                "alerts=%d runtime_ms=%d",
+                request_id,
+                len(result["processed_data"]),
+                len(result["windows"]),
+                len(result["alerts"]),
+                runtime_ms,
+            )
+            if runtime_ms > configured.request_timeout_seconds * 1000:
+                logger.warning(
+                    "request_id=%s event=slow runtime_ms=%d timeout_seconds=%d",
+                    request_id,
+                    runtime_ms,
+                    configured.request_timeout_seconds,
                 )
-
-            data = body.get("data")
-            timestamp_col = body.get("timestamp_col")
-            selected_streams = body.get("selected_streams")
-            window_size = body.get("window_size", DEFAULT_WINDOW_SIZE)
-            step_size = body.get("step_size", DEFAULT_STEP_SIZE)
-            method = body.get("method", DEFAULT_METHOD)
-            strong_corr_threshold = body.get(
-                "strong_corr_threshold",
-                DEFAULT_STRONG_CORR_THRESHOLD,
-            )
-            weak_corr_threshold = body.get(
-                "weak_corr_threshold",
-                DEFAULT_WEAK_CORR_THRESHOLD,
-            )
-            delta_threshold = body.get(
-                "delta_threshold",
-                DEFAULT_DELTA_THRESHOLD,
-            )
-
-            if data is None:
-                raise InputValidationError(
-                    "Missing 'data' in request body."
-                )
-
-            dataframe = pd.DataFrame(data)
-            dataframe.columns = dataframe.columns.str.strip()
-
-        if timestamp_col is None:
-            raise InputValidationError("Missing 'timestamp_col'.")
-
-        if selected_streams is None:
-            raise InputValidationError("Missing 'selected_streams'.")
-
-        if isinstance(selected_streams, str):
-            selected_streams = [
-                column.strip()
-                for column in selected_streams.split(",")
-                if column.strip()
-            ]
-
-        if not selected_streams:
-            raise InputValidationError(
-                "'selected_streams' must contain at least one stream."
-            )
-
-        logger.info(
-            "[%s] received source=%s rows_in=%d streams=%s "
-            "window_size=%s step_size=%s method=%s",
-            request_id,
-            source,
-            len(dataframe),
-            selected_streams,
-            window_size,
-            step_size,
-            method,
-        )
-
-        (
-            window_size,
-            step_size,
-            strong_corr_threshold,
-            weak_corr_threshold,
-            delta_threshold,
-        ) = validate_configuration(
-            window_size,
-            step_size,
-            strong_corr_threshold,
-            weak_corr_threshold,
-            delta_threshold,
-        )
-        method = validate_method(method)
-
-        result = run_correlation_pipeline(
-            df=dataframe,
-            timestamp_col=timestamp_col,
-            selected_streams=selected_streams,
-            window_size=window_size,
-            step_size=step_size,
-            method=method,
-            strong_corr_threshold=strong_corr_threshold,
-            weak_corr_threshold=weak_corr_threshold,
-            delta_threshold=delta_threshold,
-        )
-
-        alerts = result["alerts"]
-        changes = result["changes"]
-        correlations = []
-
-        for item in result["correlation_results"]:
-            correlations.append({
-                "window_index": item["window_index"],
-                "start_time": to_iso8601(item["start_time"]),
-                "end_time": to_iso8601(item["end_time"]),
-                "window_size": item["window_size"],
-                "correlation_matrix": (
-                    item["correlation_matrix"]
-                    .round(4)
-                    .to_dict()
-                ),
-            })
-
-        data_quality = result.get("data_quality", {})
-        runtime_ms = elapsed_ms()
-
-        logger.info(
-            "[%s] completed rows_out=%d windows=%d changes=%d alerts=%d "
-            "imputed=%d coerced=%d runtime_ms=%d",
-            request_id,
-            len(result["processed_data"]),
-            len(result["windows"]),
-            len(changes),
-            len(alerts),
-            data_quality.get("missing_imputed", 0),
-            data_quality.get("non_numeric_coerced", 0),
-            runtime_ms,
-        )
-
-        if runtime_ms > config.REQUEST_TIMEOUT_SECONDS * 1000:
-            logger.warning(
-                "[%s] slow request: runtime_ms=%d exceeded budget of %ds",
+            response = build_api_response(
+                result,
+                pipeline_arguments,
                 request_id,
                 runtime_ms,
-                config.REQUEST_TIMEOUT_SECONDS,
+            )
+            return jsonify(response), 200
+        except InputValidationError as exc:
+            logger.warning(
+                "request_id=%s event=failed error_type=invalid_input "
+                "runtime_ms=%d message=%s",
+                request_id,
+                elapsed_ms(),
+                exc,
+            )
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "error_type": "invalid_input",
+                        "request_id": request_id,
+                        "message": str(exc),
+                    }
+                ),
+                400,
+            )
+        except Exception as exc:
+            logger.error(
+                "request_id=%s event=failed error_type=internal_error "
+                "runtime_ms=%d exception=%s",
+                request_id,
+                elapsed_ms(),
+                type(exc).__name__,
+            )
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "error_type": "internal_error",
+                        "request_id": request_id,
+                        "message": str(exc),
+                    }
+                ),
+                500,
             )
 
-        response = {
-            "status": "success",
-            "request_id": request_id,
-            "runtime_ms": runtime_ms,
-            "configuration": {
-                "window_size": window_size,
-                "step_size": step_size,
-                "method": method,
-                "strong_corr_threshold": strong_corr_threshold,
-                "weak_corr_threshold": weak_corr_threshold,
-                "delta_threshold": delta_threshold,
-            },
-            "summary": {
-                "processed_rows": len(result["processed_data"]),
-                "windows": len(result["windows"]),
-                "correlation_results": len(result["correlation_results"]),
-                "changes": len(changes),
-                "alerts": len(alerts),
-                "non_numeric_values_coerced": data_quality.get(
-                    "non_numeric_coerced",
-                    0,
-                ),
-                "missing_values_imputed": data_quality.get(
-                    "missing_imputed",
-                    0,
-                ),
-            },
-            "correlations": correlations,
-            "alerts": with_iso_timestamps(alerts),
-            "changes": with_iso_timestamps(changes),
-        }
+    return app
 
-        return jsonify(response), 200
 
-    except InputValidationError as exc:
-        logger.warning(
-            "[%s] invalid_input after %dms: %s",
-            request_id,
-            elapsed_ms(),
-            exc,
-        )
-        return jsonify({
-            "status": "error",
-            "error_type": "invalid_input",
-            "request_id": request_id,
-            "message": str(exc),
-        }), 400
-
-    except Exception as exc:
-        logger.error(
-            "[%s] internal_error after %dms: %s",
-            request_id,
-            elapsed_ms(),
-            exc,
-            exc_info=True,
-        )
-        return jsonify({
-            "status": "error",
-            "error_type": "internal_error",
-            "request_id": request_id,
-            "message": str(exc),
-        }), 500
+app = create_app()
 
 
 if __name__ == "__main__":
-    logger.info("[STARTUP] Correlation Alert Service starting")
-    for key, value in config.as_dict().items():
-        logger.info("[STARTUP] %s=%s", key, value)
+    runtime_settings = app.config["SERVICE_SETTINGS"]
+    log_startup(get_logger("api", runtime_settings), runtime_settings)
     app.run(
-        host=config.HOST,
-        port=config.PORT,
-        debug=config.DEBUG,
+        host=runtime_settings.host,
+        port=runtime_settings.port,
+        debug=runtime_settings.debug,
     )

@@ -213,7 +213,10 @@ def run_pipeline(
     # Fit trainable detectors on clean data before synthetic anomalies are injected.
     if benchmark_mode and label_source in ("synthetic", "nab"):
         detectors = fit_trainable_detectors(detectors, clean_df)
-
+    elif not benchmark_mode:
+        train_end = int(len(clean_df) * 0.70)
+        train_df = clean_df.iloc[:train_end].copy()
+        detectors = fit_trainable_detectors(detectors, train_df)
     # Run detectors
     for detector in detectors:
 

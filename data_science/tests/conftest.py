@@ -74,12 +74,7 @@ def df_duplicate_timestamps():
 # ---------------------------------------------------------------------------
 # detector_runner.py fixture
 # ---------------------------------------------------------------------------
-# detector_runner.py's import (formerly `detectors.isolation_forest_detector`,
-# which didn't exist) was fixed for real in PR #1 (merged into main:
-# `from data_science.detectors.iforest_detector import IsolationForestDetector`).
-# No stub module needed anymore -- this just hands tests a freshly (re)imported
-# module so monkeypatching IsolationForestDetector in one test can't leak into
-# another.
+
 
 @pytest.fixture
 def detector_runner_module():

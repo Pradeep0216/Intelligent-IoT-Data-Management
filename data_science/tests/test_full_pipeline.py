@@ -6,23 +6,6 @@ Reproducible tests for the full Models pipeline, wired together end-to-end:
         -> evaluator.evaluate()
         -> report_output.generate_benchmark_report()
 
-This supersedes the earlier component-level suite on kim_model_test
-(test_shared_models_workflow.py), which tested validator / runner / output
-adapter in isolation and had to work around a real bug: detector_runner.py
-imported `detectors.isolation_forest_detector`, a module that doesn't exist
-(the real file is `detectors/iforest_detector.py`), which blocked every
-run_detector() code path. That import is fixed in detector_runner.py on this
-branch (see the comment there), so this suite exercises the real modules,
-unmodified, through the real pipeline -- no mocked-in stub module standing
-in for a broken import.
-
-Covers:
-  1. Normal detection   - stable, unremarkable sensor data.
-  2. Anomaly detection  - data with deliberately injected point anomalies.
-  3. Failure: empty data
-  4. Failure: bad timestamps (unparseable string, implausible numeric, duplicates)
-  5. Failure: unknown detector name
-  6. Failure: incomplete detector output (missing required keys)
 
 Run with:
     python -m pytest data_science/tests/test_full_pipeline.py -v

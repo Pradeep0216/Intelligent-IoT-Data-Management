@@ -1,5 +1,4 @@
 import sys
-import types
 from pathlib import Path
 
 import numpy as np
@@ -73,30 +72,17 @@ def df_duplicate_timestamps():
 
 
 # ---------------------------------------------------------------------------
-# detector_runner.py workaround fixture
+# detector_runner.py fixture
 # ---------------------------------------------------------------------------
-# KNOWN BUG (see test_detector_runner_import_currently_broken in
-# test_shared_models_workflow.py): detector_runner.py does
-#     from detectors.isolation_forest_detector import IsolationForestDetector
-# but the real module on this branch is detectors/iforest_detector.py, so a
-# plain `import detector_runner` fails before run_detector() is even
-# reachable. This fixture registers a stub module at the path
-# detector_runner.py expects (pointing at the real IsolationForestDetector),
-# so the rest of run_detector()'s branch logic -- unknown detector names,
-# the success path, error handling -- can still be exercised in isolation
-# from that specific bug.
-#
-# Delete this fixture (and update the tests that use it) once Pradeep fixes
-# the import in detector_runner.py.
+# detector_runner.py's import (formerly `detectors.isolation_forest_detector`,
+# which didn't exist) was fixed for real in PR #1 (merged into main:
+# `from data_science.detectors.iforest_detector import IsolationForestDetector`).
+# No stub module needed anymore -- this just hands tests a freshly (re)imported
+# module so monkeypatching IsolationForestDetector in one test can't leak into
+# another.
 
 @pytest.fixture
-def detector_runner_module(monkeypatch):
-    import detectors.iforest_detector as real_iforest
-
-    stub = types.ModuleType("detectors.isolation_forest_detector")
-    stub.IsolationForestDetector = real_iforest.IsolationForestDetector
-    monkeypatch.setitem(sys.modules, "detectors.isolation_forest_detector", stub)
-
+def detector_runner_module():
     sys.modules.pop("detector_runner", None)
     import detector_runner
     yield detector_runner

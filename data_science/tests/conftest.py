@@ -6,9 +6,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-# The pipeline/preprocessor/detector modules use bare intra-package imports
-# (e.g. "from preprocessor import load_and_prepare"), so data_science/ itself
-# needs to be on sys.path, not just the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 

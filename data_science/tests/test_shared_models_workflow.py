@@ -1,35 +1,3 @@
-"""
-Practical test suite for the shared Models workflow: validator -> runner -> output adapter.
-
-Component mapping (per data_science/Models_Input_Format.md and the actual
-authored files, cherry-picked onto this branch from their original branches):
-
-  Validator      -> data_science/input_validator.py   (validate_input, InputValidationError)
-                    Owner: Deepakkumar Govindan (Week 4) -- originally on `deepak/input-validator`
-  Runner         -> data_science/detector_runner.py    (run_detector)
-                    Owner: Pradeep -- originally on `Pradeep0216-patch-1`
-  Output adapter -> data_science/evaluator.py           (evaluate)
-                    data_science/report_output.py       (generate_benchmark_report)
-                    Already merged to main; evaluator output format was touched
-                    by Saran (VolatilityShiftAD evaluator-format fixes).
-
-input_validator.py and detector_runner.py were not present together on any one
-branch as of this writing (each lived on its own short-lived, unmerged branch),
-so they were cherry-picked onto kim_model_test -- still rooted on main -- purely
-so the three stages could be tested against each other for real instead of
-against unrelated legacy modules (pipeline.py / preprocessor.py, which predate
-and duplicate this contract with different, silently-recovering behaviour
-instead of rejecting bad input).
-
-KNOWN BUG documented and worked around here: detector_runner.py imports
-`detectors.isolation_forest_detector`, but the real file is
-`detectors/iforest_detector.py`. See test_detector_runner_import_currently_broken
-and the detector_runner_module fixture in conftest.py.
-
-Run with:
-    python -m pytest data_science/tests/test_shared_models_workflow.py -v
-"""
-
 import sys
 
 import pandas as pd
@@ -96,7 +64,6 @@ def test_missing_timestamp_column_rejected(df_missing_timestamp_col):
 
 
 def test_missing_timestamp_column_accepted_with_custom_column_name(df_missing_timestamp_col):
-    """Sanity check: the validator's timestamp_col is configurable, not hardcoded."""
     df = df_missing_timestamp_col.copy()
     df["time"] = pd.date_range("2024-01-01", periods=len(df), freq="s").astype(str)
     result = validate_input(df, timestamp_col="time")
@@ -135,19 +102,6 @@ def test_duplicate_timestamps_rejected(df_duplicate_timestamps):
 # ---------------------------------------------------------------------------
 
 def test_detector_runner_import_currently_broken():
-    """
-    KNOWN BUG: detector_runner.py does
-        from detectors.isolation_forest_detector import IsolationForestDetector
-    but the real file on this branch is detectors/iforest_detector.py. That
-    means plain `import detector_runner` fails *before* run_detector() is ever
-    reachable -- which blocks every code path in the runner, including the
-    graceful "unsupported detector name" branch tested below (worked around
-    there via the detector_runner_module fixture).
-
-    This test documents today's broken state. Once fixed, this test will
-    start failing -- at that point delete it, and drop the
-    detector_runner_module workaround fixture in conftest.py.
-    """
     sys.modules.pop("detector_runner", None)
     sys.modules.pop("detectors.isolation_forest_detector", None)
     with pytest.raises(ModuleNotFoundError, match="isolation_forest_detector"):
@@ -163,7 +117,6 @@ def test_unknown_detector_name_returns_graceful_failure(detector_runner_module, 
 
 
 def test_unknown_detector_name_lookup_is_case_insensitive(detector_runner_module, valid_df):
-    """run_detector() lowercases the name -- 'IsolationForest' should still resolve."""
     clean_df = validate_input(valid_df)
     result = detector_runner_module.run_detector("IsolationForest", clean_df)
     assert result["status"] == "success"
@@ -188,11 +141,6 @@ def test_evaluator_rejects_output_missing_model_name():
 def test_runner_catches_detector_that_returns_incomplete_dict(
     detector_runner_module, valid_df, monkeypatch
 ):
-    """
-    If a detector's detect() returns a dict missing a required key (e.g.
-    'anomaly_flag'), run_detector()'s try/except must catch the resulting
-    KeyError and report status='failed' instead of crashing the caller.
-    """
     clean_df = validate_input(valid_df)
 
     class BrokenDetector:

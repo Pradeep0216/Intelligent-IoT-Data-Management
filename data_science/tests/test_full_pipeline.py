@@ -1,16 +1,3 @@
-"""
-Reproducible tests for the full Models pipeline, wired together end-to-end:
-
-    input_validator.validate_input()
-        -> detector_runner.run_detector()
-        -> evaluator.evaluate()
-        -> report_output.generate_benchmark_report()
-
-
-Run with:
-    python -m pytest data_science/tests/test_full_pipeline.py -v
-"""
-
 import pandas as pd
 import pytest
 
@@ -33,10 +20,6 @@ def _through_pipeline(df, detector_name="isolationforest", parameters=None, **va
 # ---------------------------------------------------------------------------
 
 def test_normal_detection_end_to_end(normal_df, tmp_path):
-    """Stable, unremarkable sensor data: validator accepts it, the runner
-    succeeds, and (since IsolationForest's contamination setting forces it to
-    flag ~contamination fraction of *something*, by design) only a small,
-    bounded number of rows get flagged."""
     clean, result = _through_pipeline(normal_df, parameters={"contamination": 0.05})
 
     assert result["status"] == "success"
@@ -63,10 +46,6 @@ def test_normal_detection_end_to_end(normal_df, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_anomaly_detection_end_to_end(normal_df, tmp_path):
-    """Data with deliberately injected point anomalies: validator accepts it
-    (an injected anomaly is still valid numeric input), the runner succeeds,
-    and IsolationForest recovers most of the true anomalies (evaluated
-    against anomaly_injector's ground-truth labels)."""
     injected_df, injector_labels = inject_point_spikes(
         normal_df, n_anomalies=10, magnitude=6.0, random_seed=7
     )
@@ -93,8 +72,6 @@ def test_anomaly_detection_end_to_end(normal_df, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_empty_data_rejected_before_runner(empty_df):
-    """The pipeline must reject empty input at the validator, before it ever
-    reaches the runner/detector."""
     with pytest.raises(InputValidationError, match="empty"):
         validate_input(empty_df)
 
@@ -114,8 +91,6 @@ def test_implausible_numeric_timestamp_rejected(df_implausible_numeric_timestamp
 
 
 def test_implausible_numeric_timestamp_accepted_when_acknowledged(df_implausible_numeric_timestamp):
-    """Sanity check on the same fixture: explicitly acknowledging a numeric
-    'timestamp' column as a sample index (not real time) makes it valid."""
     result = validate_input(df_implausible_numeric_timestamp, timestamp_is_index=True)
     assert len(result) == 4
 
@@ -136,7 +111,6 @@ def test_unknown_detector_name_returns_graceful_failure(normal_df):
 
 
 def test_unknown_detector_name_lookup_is_case_insensitive(normal_df):
-    """run_detector() lowercases the name -- 'IsolationForest' should still resolve."""
     clean, result = _through_pipeline(normal_df, detector_name="IsolationForest")
     assert result["status"] == "success"
 
@@ -146,9 +120,6 @@ def test_unknown_detector_name_lookup_is_case_insensitive(normal_df):
 # ---------------------------------------------------------------------------
 
 def test_runner_catches_detector_output_missing_required_key(normal_df, monkeypatch):
-    """If a detector's detect() returns a dict missing a required key (e.g.
-    'anomaly_flag'), run_detector()'s try/except must catch the resulting
-    KeyError and report status='failed' instead of crashing the caller."""
     import detector_runner
 
     class BrokenDetector:
@@ -196,8 +167,6 @@ def test_evaluator_rejects_output_missing_model_name():
 
 
 def test_report_output_handles_missing_optional_fields_without_crashing(tmp_path):
-    """Even a maximally incomplete eval row / result (no metric columns, no
-    anomaly_flag/runtime/score) must not crash report generation."""
     eval_df = pd.DataFrame([{"detector": "StubGood"}])
     results = {"StubGood": {"model_name": "StubGood"}}
     out_dir = tmp_path / "report_out"

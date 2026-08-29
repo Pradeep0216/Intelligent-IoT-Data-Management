@@ -5,3 +5,4 @@ seaborn
 adtk
 pyod
 scikit-learn
+torch

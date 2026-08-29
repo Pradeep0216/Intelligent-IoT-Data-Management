@@ -1,0 +1,15 @@
+{
+    "timestamp": "2024-01-01T00:00:19",
+    "sensor_id": "sensor_001",
+    "alert_type": "anomaly",
+    "method": "IsolationForest",
+    "anomaly_flag": true,
+    "score": 0.318432205045697,
+    "severity": "high",
+    "message": "Anomaly detected by IsolationForest for sensor sensor_001.",
+    "supporting_values": {
+        "sensor_1": 0.95,
+        "sensor_2": 0.98,
+        "sensor_3": 0.92
+    }
+}

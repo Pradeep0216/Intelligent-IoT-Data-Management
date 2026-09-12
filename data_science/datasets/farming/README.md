@@ -16,10 +16,11 @@
 
 ## Files
 
+- `notebook.ipynb` — the full reproducible investigation: Task 1 (dataset selection, field identification, timestamp/quality checks, correlation suitability) + Task 2 (EDA, preprocessing, Models/AIntl execution, evaluation, visualisations, interpretation, limitations, conclusions). Runs top to bottom with no manual steps; every cell's output is already saved inside it.
+- `Smart_Farming_Models_AIntl_Evaluation_Report.pdf` — the professional summary report of Task 2's findings, for stakeholder/project review.
+- `make_report.py` — regenerates the PDF from `outputs/task2_results.json` and `outputs/*.png` (both produced by the notebook).
 - `data/farming.csv` — the raw ThingSpeak export (7,488 rows × 10 columns), unmodified.
-- `outputs/` — the results this experiment produced: `task2_results.json` (all headline numbers) and 7 charts (`.png`) covering the EDA distributions, flagged anomalies over time and by hour/date, rolling correlation, correlation severity, and runtime scaling. This is the evidence record for the findings below.
-
-The analysis notebook and PDF report used to produce these are not kept in this branch; the PDF was sent directly to the author instead.
+- `outputs/` — the results this experiment produced: `task2_results.json` (all headline numbers) and 7 charts (`.png`) covering the EDA distributions, flagged anomalies over time and by hour/date, rolling correlation, correlation severity, and runtime scaling. This is the evidence record the findings below and the PDF report are built from.
 
 ## What this experiment covers
 
@@ -58,16 +59,28 @@ Configuration used throughout:
 
 ## How to reproduce
 
-This repo's `.venv` (Python 3.9) cannot run `analytics_integration.pipeline` — `correlation_alert/settings.py` uses `str | None` type-hint syntax, which requires **Python 3.10+**.
+This repo's `.venv` (Python 3.9) cannot run `analytics_integration.pipeline` — `correlation_alert/settings.py` uses `str | None` type-hint syntax, which requires **Python 3.10+**. Set up a separate environment:
 
 ```bash
 # From the repo root
 python3.12 -m venv .venv312          # any Python 3.10+ works
 source .venv312/bin/activate
-pip install pandas numpy matplotlib scikit-learn flask flask-cors requests
+pip install pandas numpy matplotlib seaborn scikit-learn flask flask-cors requests \
+            nbclient nbconvert ipykernel reportlab Pillow
+python -m ipykernel install --user --name farming312 --display-name "farming312"
 ```
 
-Then, from the repo root:
+**Full investigation (recommended):** run the notebook top to bottom.
+
+```bash
+cd data_science/datasets/farming
+jupyter nbconvert --to notebook --execute --ExecutePreprocessor.kernel_name=farming312 \
+    notebook.ipynb --output notebook.ipynb
+```
+
+or open it in Jupyter/VS Code (select the `farming312` kernel) and run all cells — it adds the repo root to `sys.path` itself, so it imports `data_science`, `analytics_integration`, and `correlation_alert` directly. To regenerate just the PDF afterwards: `python make_report.py`.
+
+**Quick check (no notebook needed):** the same preprocessing and full-pipeline call, as a standalone script, from the repo root:
 
 ```python
 import pandas as pd

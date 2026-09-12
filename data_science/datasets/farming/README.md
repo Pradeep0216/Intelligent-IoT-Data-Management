@@ -9,50 +9,92 @@
 - **What it is:** climate-computer readings from inside a greenhouse, logged roughly once a minute: air temperature, a second temperature probe, relative humidity, and CO2, plus four values (wet-bulb temperature, absolute humidity, dew point, humidity deficit) the device computes from the first two and reports alongside them. Coverage is 27 June – 12 October 2019, arriving as three disjoint export blocks separated by two multi-week outages (47 and 55 days).
 - **Transformations applied:**
   1. **Field identification (Task 1).** ThingSpeak exports only `field1`…`field8` with no labels. The mapping used here (`temp_c`, `wet_bulb_c`, `temp2_c`, `humidity_pct`, `abs_humidity_gm3`, `dew_point_c`, `humidity_deficit_gm3`, `co2_ppm`) was derived from the data itself, not assumed: the four derived fields were recomputed from `temp_c`/`humidity_pct` using published psychrometric formulas (Tetens saturation vapour pressure, Magnus dew point, Stull wet-bulb approximation) and matched to the file to within its 0.1 rounding resolution.
-  2. **Fault-sentinel removal (Task 2).** 22 rows (0.29% of the file) encode sensor failure as fixed error-code values (`99.9` / `455` / `9999` / `0.0`) rather than `NaN` — removed explicitly, since the input validator does not catch this (see notebook §"Evidence: what the input validator actually catches").
+  2. **Fault-sentinel removal (Task 2).** 22 rows (0.29% of the file) encode sensor failure as fixed error-code values (`99.9` / `455` / `9999` / `0.0`) rather than `NaN` — removed explicitly, since the input validator does not catch this (see "Evidence: what the input validator actually catches" below).
   3. **Block selection (Task 2).** Selected the single longest continuous export block (7–12 Oct 2019, 7,261 rows at ~60s cadence) as the working series, to keep the two multi-week outages out of the rolling-correlation windows.
   4. Timestamps formatted as ISO-8601 strings (`YYYY-MM-DDTHH:MM:SSZ`) to match what `analytics_integration.pipeline` expects.
 - **Assumptions:** `temp_c` (air temperature) was chosen as the Models anomaly-detection metric. `temp_c` vs `humidity_pct` was chosen as the primary Correlation pair because the two are physically forced to move in opposite directions (a known-sign relationship to test the module against); `temp_c` vs `co2_ppm` was run as a deliberately weaker second pair, since the CO2 channel sits at its ~400ppm outdoor-baseline floor for most of the record. The four derived fields (`wet_bulb_c`, `abs_humidity_gm3`, `dew_point_c`, `humidity_deficit_gm3`) were excluded from correlation analysis — they are deterministic functions of `temp_c`/`humidity_pct`, not independent sensor readings, so correlating them would just measure the formula.
 
 ## Files
 
-- `notebook.ipynb` — full reproducible investigation: Task 1 (dataset selection, field identification, timestamp/quality checks, correlation suitability) + Task 2 (EDA, preprocessing, Models/AIntl execution, evaluation, visualisations, interpretation, limitations, conclusions). Runs top to bottom with no manual steps.
-- `Smart_Farming_Models_AIntl_Evaluation_Report.pdf` — professional summary report of Task 2's findings, for stakeholder review.
-- `make_report.py` — regenerates the PDF report from `outputs/task2_results.json` and `outputs/*.png` (both produced by the notebook).
 - `data/farming.csv` — the raw ThingSpeak export (7,488 rows × 10 columns), unmodified.
-- `outputs/` — figures (`.png`) and the results summary (`task2_results.json`) produced by running the notebook; regenerated each time the notebook is re-executed.
+- `outputs/` — the results this experiment produced: `task2_results.json` (all headline numbers) and 7 charts (`.png`) covering the EDA distributions, flagged anomalies over time and by hour/date, rolling correlation, correlation severity, and runtime scaling. This is the evidence record for the findings below.
+
+The analysis notebook and PDF report used to produce these are not kept in this branch; the PDF was sent directly to the author instead.
+
+## What this experiment covers
+
+Ran the existing AIntl path — `Dataset -> Models input validation -> Isolation Forest -> Models adapter -> Correlation path -> Correlation adapter -> Analytics response -> Draft V0.1 validation` — against this dataset, with no changes made to the Models, Correlation, or AIntl implementation code.
+
+Configuration used throughout:
+
+| Parameter | Value |
+|---|---|
+| `entity_id` | `greenhouse_ch80502` |
+| `model_metric` | `temp_c` |
+| `correlation_streams` | `[temp_c, humidity_pct]` and `[temp_c, co2_ppm]` |
+| `detector_name` | `isolationforest` |
+| `detector_parameters` | `{"contamination": 0.05}` |
+| `correlation_window_size` / `step_size` | `20` / `10` |
+| `correlation_method` | `pearson` |
+
+## Findings
+
+**Data integrity.** 7,488 raw readings, zero duplicates, zero `NaN`s — but 22 rows (0.29%) encode sensor failure as fixed error-code values (`99.9`/`455`/`9999`/`0.0`), invisible to any missing-value check. The input validator correctly rejects unmapped columns, duplicate timestamps, and `NaN` sensor values, but does **not** catch these fault sentinels, since they are valid non-null floats — a gap in the validator's contract, not a defect in this run.
+
+**Models path — Isolation Forest on `temp_c`.** Flagged 357/7,261 readings (4.92%), concentrated on 4 of 5 calendar days (2 days received zero flags), lining up with a real multi-hour heat spike (9 Oct, to 29.1°C) and a separate cold dip (10 Oct) — not the recurring day/night cycle. 100% of independently-identified top/bottom 0.5th-percentile readings were also flagged, and repeated runs were bit-for-bit deterministic. See `outputs/anomaly_timeseries.png` and `outputs/anomaly_hour_of_day.png`.
+
+**Correlation path — two experiments, an unexpected result.** `temp_c` vs `humidity_pct` (the genuinely physically-linked pair, negative correlation expected) produced 178 alerts (46 HIGH). `temp_c` vs `co2_ppm` (deliberately the *weaker* pair, since CO2 sits at its ~400ppm floor) produced **more**: 258 alerts (108 HIGH). Cause: a near-constant channel makes rolling Pearson correlation numerically unstable (a few ppm of jitter swings it between +1 and -1), which the Correlation module currently reports identically to a genuine relationship change. See `outputs/correlation_rolling.png` and `outputs/correlation_severity.png`.
+
+**Full pipeline.** Ran end-to-end with no code changes, 535 total alerts (357 point anomalies + 178 correlation-change), completed in 1.31s for the full 7,261-row block, scaling close to linearly with row count (`outputs/runtime_scalability.png`).
+
+**No ground-truth labels exist for this dataset**, so no precision/recall/F1/AUC is reported, per the evaluation brief — findings above rely on independent statistical cross-checks, determinism, and domain plausibility instead.
+
+## Limitations
+
+- The input validator does not recognise domain-specific fault sentinels, only literal `NaN`.
+- Neither the validator nor the correlation window is gap-aware (a window is row-count-based, not time-based) — this dataset's two multi-week outages were excluded by hand for that reason.
+- The Correlation module cannot distinguish real drift from noise-driven instability in a near-constant channel (demonstrated directly by the co2 experiment above).
+- `temp2_c`'s physical location is undocumented; single device, single 5-day working block; Models path exercised univariately only.
 
 ## How to reproduce
 
-This repo's `.venv` (Python 3.9) cannot run `analytics_integration.pipeline` — `correlation_alert/settings.py` uses `str | None` type-hint syntax, which requires **Python 3.10+**. Create a separate environment for this notebook:
+This repo's `.venv` (Python 3.9) cannot run `analytics_integration.pipeline` — `correlation_alert/settings.py` uses `str | None` type-hint syntax, which requires **Python 3.10+**.
 
 ```bash
 # From the repo root
 python3.12 -m venv .venv312          # any Python 3.10+ works
 source .venv312/bin/activate
-pip install pandas numpy matplotlib seaborn scikit-learn flask flask-cors requests \
-            nbclient nbconvert ipykernel reportlab Pillow
-python -m ipykernel install --user --name farming312 --display-name "farming312"
+pip install pandas numpy matplotlib scikit-learn flask flask-cors requests
 ```
 
-Then, from `data_science/datasets/farming/`, run the notebook top to bottom:
+Then, from the repo root:
 
-```bash
-cd data_science/datasets/farming
-jupyter nbconvert --to notebook --execute --ExecutePreprocessor.kernel_name=farming312 \
-    notebook.ipynb --output notebook.ipynb
+```python
+import pandas as pd
+from analytics_integration.pipeline import run_analytics_pipeline
+
+RENAMES = {"field1": "temp_c", "field2": "wet_bulb_c", "field3": "temp2_c",
+           "field4": "humidity_pct", "field5": "abs_humidity_gm3",
+           "field6": "dew_point_c", "field7": "humidity_deficit_gm3", "field8": "co2_ppm"}
+FAULT_SENTINELS = {99.9, 455.0, 9999.0, 0.0}
+
+df = pd.read_csv("data_science/datasets/farming/data/farming.csv").rename(columns=RENAMES)
+df["timestamp"] = pd.to_datetime(df["created_at"], format="mixed", utc=True)
+
+fault_mask = df[["temp_c", "humidity_pct", "co2_ppm"]].isin(FAULT_SENTINELS).any(axis=1)
+d = df["timestamp"].diff()
+block_id = (d > d.median() * 100).cumsum()
+main_block = block_id.value_counts().idxmax()
+main = df[(block_id == main_block) & ~fault_mask].sort_values("timestamp").reset_index(drop=True)
+main["timestamp"] = main["timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+response = run_analytics_pipeline(
+    df=main, timestamp_col="timestamp", entity_id="greenhouse_ch80502",
+    model_metric="temp_c", correlation_streams=["temp_c", "humidity_pct"],
+    detector_name="isolationforest", detector_parameters={"contamination": 0.05},
+    correlation_window_size=20, correlation_step_size=10, correlation_method="pearson",
+)
+print(response["summary"])
 ```
 
-or open it in Jupyter/VS Code (selecting the `farming312` kernel) and run all cells. The notebook adds the repo root to `sys.path` itself, so it can import `data_science`, `analytics_integration`, and `correlation_alert` directly — no extra setup needed beyond the environment above.
-
-To regenerate just the PDF report (after the notebook has produced `outputs/task2_results.json` and the figures):
-
-```bash
-python make_report.py
-```
-
-## What this experiment covers
-
-Runs the existing AIntl path — `Dataset -> Models input validation -> Isolation Forest -> Models adapter -> Correlation path -> Correlation adapter -> Analytics response -> Draft V0.1 validation` — against this dataset, with no changes made to the Models, Correlation, or AIntl implementation code. See the PDF report or `notebook.ipynb` for full results, evaluation, limitations, and conclusions.
-
-**Headline results** (7,261-row primary block): Isolation Forest flagged 4.92% of `temp_c` readings, concentrated on two real excursions (a heat spike and a cold dip) rather than the recurring daily cycle, and was 100% deterministic. The Correlation module produced more, and more severe, alerts for the deliberately *weaker* pair (`temp_c` vs `co2_ppm`, 258 alerts) than for the genuinely physically-linked pair (`temp_c` vs `humidity_pct`, 178 alerts) — because a near-constant, floored channel makes rolling Pearson correlation numerically unstable, a failure mode the module does not currently distinguish from a real relationship change. The full pipeline, including Draft V0.1 response validation, completed in 1.3s for the full block with no ground-truth labels available (so no precision/recall/F1/AUC is reported, per the evaluation brief).
+This reproduces the preprocessing (fault-sentinel removal + block selection) and the full-pipeline run described above. Swap `correlation_streams` to `["temp_c", "co2_ppm"]` to reproduce the second correlation experiment.

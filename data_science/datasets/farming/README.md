@@ -20,6 +20,8 @@
 - `Smart_Farming_Models_AIntl_Evaluation_Report.pdf`: the professional summary report of Task 2's findings, for stakeholder/project review.
 - `make_report.py`: regenerates the PDF from `outputs/task2_results.json` and `outputs/*.png` (both produced by the notebook).
 - `quick_check.py`: a plain, runnable script that reproduces the preprocessing and one full-pipeline call, without needing the notebook or Jupyter. Run with `python data_science/datasets/farming/quick_check.py` from anywhere.
+- `show_alerts.py`: prints the actual individual detections (timestamps, values, scores, correlation windows), not just summary counts. Run with `python data_science/datasets/farming/show_alerts.py`.
+- `run_checks.py`: runs every specific evaluation check described in the Findings section as one script: detector alone, correlation alone (both pairs), the full combined pipeline, the independent-outlier cross-check, the determinism check, and all four input-validator behaviour tests (missing columns, duplicate timestamps, NaN values, fault-sentinel values). Run with `python data_science/datasets/farming/run_checks.py`.
 - `data/farming.csv`: the raw ThingSpeak export (7,488 rows x 10 columns), unmodified.
 - `outputs/`: the results this experiment produced. `task2_results.json` (all headline numbers) and 7 charts (`.png`) covering the EDA distributions, flagged anomalies over time and by hour/date, rolling correlation, correlation severity, and runtime scaling. This is the evidence record the findings below and the PDF report are built from.
 

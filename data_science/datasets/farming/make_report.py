@@ -47,9 +47,9 @@ def fig(path, caption, width=15*cm):
 
 # ---------------------------------------------------------------- Title
 story.append(Paragraph("Smart Farming (ThingSpeak Channel 80502)", styles["H1c"]))
-story.append(Paragraph("Models / AIntl Pipeline Evaluation — Task 2 Report", styles["H2c"]))
+story.append(Paragraph("Models / AIntl Pipeline Evaluation: Task 2 Report", styles["H2c"]))
 story.append(Paragraph(
-    "Branch: <b>kim/report/farming</b> (experiment only — not merged into <b>main</b>) &nbsp;|&nbsp; "
+    "Branch: <b>kim/report/farming</b> (experiment only, not merged into <b>main</b>) &nbsp;|&nbsp; "
     "Location: <b>data_science/datasets/farming/</b>", styles["Meta"]))
 rule()
 
@@ -60,7 +60,7 @@ p("This report evaluates how the current Models/AIntl pipeline "
   "Correlation path -&gt; Correlation adapter -&gt; Analytics response -&gt; Draft V0.1 validation</i>) "
   "behaves against a real, independently-sourced IoT dataset: a public ThingSpeak greenhouse "
   "climate-monitoring channel. No changes were made to the Models, Correlation, or AIntl "
-  "implementation code — this is a behavioural evaluation of the pipeline as it stands.")
+  "implementation code; this is a behavioural evaluation of the pipeline as it stands.")
 bullets([
     f"<b>{RESULTS['n_rows']:,} readings</b> processed end-to-end through the full AIntl pipeline in "
     f"<b>{RESULTS['full_pipeline_wall_time_s']:.2f}s</b>, producing a Draft-V0.1-validated response with "
@@ -74,8 +74,8 @@ bullets([
     "The Correlation module produced a real but <b>unexpected</b> contrast: the deliberately weaker "
     f"pairing (<code>temp_c</code> vs <code>co2_ppm</code>, {RESULTS['corr_alerts_temp_co2']} alerts) "
     f"triggered <b>more</b> alerts than the genuinely physically-linked pairing "
-    f"(<code>temp_c</code> vs <code>humidity_pct</code>, {RESULTS['corr_alerts_temp_humidity']} alerts) "
-    "— because a near-constant, floored channel makes rolling Pearson correlation numerically unstable, "
+    f"(<code>temp_c</code> vs <code>humidity_pct</code>, {RESULTS['corr_alerts_temp_humidity']} alerts), "
+    "because a near-constant, floored channel makes rolling Pearson correlation numerically unstable, "
     "a failure mode the module does not currently distinguish from a genuine relationship change.",
     "This dataset has <b>no ground-truth anomaly labels</b>; per the evaluation brief, no precision/"
     "recall/F1/AUC is reported. Evaluation instead relies on independent statistical cross-checks, "
@@ -86,11 +86,11 @@ bullets([
 h2("Dataset Source and Provenance")
 bullets([
     "<b>Source:</b> ThingSpeak public channel 80502 (MathWorks ThingSpeak IoT platform), "
-    "https://thingspeak.com/channels/80502 — retrieved via the public feeds.csv endpoint, no API key required.",
+    "https://thingspeak.com/channels/80502, retrieved via the public feeds.csv endpoint, no API key required.",
     "<b>What it is:</b> greenhouse climate-computer readings logged roughly once a minute: air temperature, "
     "a second temperature probe, relative humidity, and CO2, plus four derived psychrometric quantities "
     "(wet-bulb temperature, absolute humidity, dew point, humidity deficit).",
-    "<b>Coverage:</b> 27 June – 12 October 2019, arriving as three disjoint export blocks separated by two "
+    "<b>Coverage:</b> 27 June to 12 October 2019, arriving as three disjoint export blocks separated by two "
     "multi-week outages (47 and 55 days).",
     "<b>Field identification (Task 1):</b> ThingSpeak exports only <code>field1..field8</code> with no labels. "
     "The mapping used here was derived from the data itself and verified numerically by recomputing published "
@@ -113,9 +113,9 @@ bullets([
 h3("Variable choice")
 bullets([
     "<b>Models anomaly-detection metric:</b> <code>temp_c</code> (air temperature).",
-    "<b>Correlation pair A (primary):</b> <code>temp_c</code> vs <code>humidity_pct</code> — physically forced "
+    "<b>Correlation pair A (primary):</b> <code>temp_c</code> vs <code>humidity_pct</code>, physically forced "
     "to move in opposite directions (warmer air holds more moisture), giving a known-sign relationship to test.",
-    "<b>Correlation pair B (contrast):</b> <code>temp_c</code> vs <code>co2_ppm</code> — deliberately weaker, "
+    "<b>Correlation pair B (contrast):</b> <code>temp_c</code> vs <code>co2_ppm</code>, deliberately weaker, "
     "since the CO2 channel sits at its ~400ppm outdoor-baseline floor for most of the record.",
 ])
 
@@ -152,12 +152,12 @@ bullets([
     "all sensor fields numeric (float64).",
     "Zero duplicate rows, zero duplicate timestamps, zero <code>NaN</code> values anywhere in the raw file.",
     "That apparent cleanliness is misleading: 22 rows (0.29%) encode sensor failure as fixed error-code "
-    "<i>values</i>, not <code>NaN</code> — invisible to any missing-value check.",
+    "<i>values</i>, not <code>NaN</code>, invisible to any missing-value check.",
     "<code>co2_ppm</code> is heavily right-skewed with a hard floor at ~400ppm; <code>temp_c</code>/<code>temp2_c</code> "
     "are roughly bell-shaped; <code>humidity_pct</code> is wider and slightly left-skewed.",
 ])
 fig(str(OUT_DIR / "eda_distributions.png"),
-    "Figure 1 — Distributions of the 4 independent sensor channels (fault rows excluded).")
+    "Figure 1: Distributions of the 4 independent sensor channels (fault rows excluded).")
 
 # ---------------------------------------------------------------- Validator evidence
 h2("Evidence: What the Input Validator Actually Catches")
@@ -176,7 +176,7 @@ bullets([
 ])
 
 # ---------------------------------------------------------------- Models path
-h2("Models Path — Isolation Forest on temp_c")
+h2("Models Path: Isolation Forest on temp_c")
 bullets([
     f"<b>{RESULTS['n_anomalies']} / {RESULTS['n_rows']:,} readings ({RESULTS['anomaly_pct']:.2f}%)</b> flagged, "
     f"in line with the configured 5% contamination.",
@@ -185,19 +185,19 @@ bullets([
     "flags and 241 of 357 flags falling on a single day (9 Oct). That day's cluster lines up with a real "
     "multi-hour temperature spike to 29.1°C; a second, smaller cluster on 10 Oct lines up with a separate "
     "cold dip to ~22.3-22.6°C (see Figure 2). A detector mistaking the recurring day/night cycle for anomalous "
-    "would instead flag similar counts at the same hour on every day — which is not what happened.",
+    "would instead flag similar counts at the same hour on every day, which is not what happened.",
     f"<b>100%</b> of independently-identified top/bottom 0.5th-percentile <code>temp_c</code> readings were "
     "also flagged by the detector, and repeated runs were <b>bit-for-bit deterministic</b>.",
 ])
 fig(str(OUT_DIR / "anomaly_timeseries.png"),
-    "Figure 2 — Air temperature with IsolationForest-flagged anomalies (7-12 Oct 2019). "
+    "Figure 2: Air temperature with IsolationForest-flagged anomalies (7-12 Oct 2019). "
     "Flags cluster on the real heat spike (9 Oct) and cold dip (10 Oct), not the recurring daily cycle.")
 fig(str(OUT_DIR / "anomaly_hour_of_day.png"),
-    "Figure 3 — Left: hour-of-day distribution of flagged anomalies vs all readings. Right: flagged "
-    "anomalies by calendar date — 2 of 5 days received zero flags.")
+    "Figure 3: Left, hour-of-day distribution of flagged anomalies vs all readings. Right, flagged "
+    "anomalies by calendar date. 2 of 5 days received zero flags.")
 
 # ---------------------------------------------------------------- Correlation path
-h2("Correlation Path — Two Experiments")
+h2("Correlation Path: Two Experiments")
 bullets([
     f"<b>temp_c vs humidity_pct</b> (primary, physically-linked pair): <b>{RESULTS['corr_alerts_temp_humidity']} alerts</b> "
     f"({RESULTS['corr_severity_temp_humidity'].get('HIGH',0)} HIGH / "
@@ -208,18 +208,18 @@ bullets([
     f"({RESULTS['corr_severity_temp_co2'].get('HIGH',0)} HIGH / "
     f"{RESULTS['corr_severity_temp_co2'].get('MEDIUM',0)} MEDIUM / "
     f"{RESULTS['corr_severity_temp_co2'].get('LOW',0)} LOW).",
-    "<b>This is the reverse of what was expected</b> — the weaker pair produced more alerts, and more "
+    "<b>This is the reverse of what was expected</b>: the weaker pair produced more alerts, and more "
     "severe ones. The mechanism: <code>co2_ppm</code> sits flat at its sensor floor for long stretches, so a "
-    "20-reading window covering one of those stretches has almost no variance in that channel — a few ppm of "
+    "20-reading window covering one of those stretches has almost no variance in that channel, so a few ppm of "
     "sensor jitter then dominates the Pearson coefficient, swinging it erratically between roughly +1 and -1. "
     "That is numerical instability from a near-constant channel, not a genuine drifting relationship, but the "
     "Correlation module currently reports both identically as <code>CORRELATION_CHANGE</code> alerts.",
 ])
 fig(str(OUT_DIR / "correlation_rolling.png"),
-    "Figure 4 — Rolling correlation for both pairs. The co2 pairing (bottom) oscillates far more erratically "
+    "Figure 4: Rolling correlation for both pairs. The co2 pairing (bottom) oscillates far more erratically "
     "than the humidity pairing (top), consistent with variance-floor instability rather than a real relationship.")
 fig(str(OUT_DIR / "correlation_severity.png"),
-    "Figure 5 — CORRELATION_CHANGE severity breakdown: the weaker, floored pairing produced more HIGH-severity "
+    "Figure 5: CORRELATION_CHANGE severity breakdown. The weaker, floored pairing produced more HIGH-severity "
     "alerts than the genuinely physically-linked pairing.")
 
 story.append(PageBreak())
@@ -227,7 +227,7 @@ story.append(PageBreak())
 # ---------------------------------------------------------------- Full pipeline + runtime
 h2("Full AIntl Pipeline and Runtime")
 bullets([
-    f"The complete path — Models, Correlation, envelope building, and Draft V0.1 response validation — ran "
+    f"The complete path (Models, Correlation, envelope building, and Draft V0.1 response validation) ran "
     f"end-to-end with no code changes and completed in <b>{RESULTS['full_pipeline_wall_time_s']:.2f}s</b> for "
     f"the full 7,261-row block, producing <b>{RESULTS['full_pipeline_alert_count']} total alerts</b> "
     f"({RESULTS['full_pipeline_alert_types'].get('POINTWISE_ANOMALY',0)} POINTWISE_ANOMALY, "
@@ -236,25 +236,25 @@ bullets([
     "any scale tested.",
 ])
 fig(str(OUT_DIR / "runtime_scalability.png"),
-    "Figure 6 — AIntl pipeline wall-clock time vs. rows processed.")
+    "Figure 6: AIntl pipeline wall-clock time vs. rows processed.")
 
 # ---------------------------------------------------------------- Limitations
 h2("Limitations")
 bullets([
-    "<b>No ground-truth labels</b> — no precision/recall/F1/AUC is reported; evaluation is qualitative "
+    "<b>No ground-truth labels</b>: no precision/recall/F1/AUC is reported; evaluation is qualitative "
     "(anomaly rate, timing plausibility, an independent statistical cross-check, determinism, and alert "
     "behaviour under two contrasting correlation pairs).",
-    "<b>The input validator does not recognise domain-specific fault sentinels</b> — only literal "
+    "<b>The input validator does not recognise domain-specific fault sentinels</b>, only literal "
     "<code>NaN</code>. A sentinel value inside a sensor's normal operating range would go undetected.",
-    "<b>Neither the validator nor the correlation window is gap-aware</b> — a rolling window is defined by "
+    "<b>Neither the validator nor the correlation window is gap-aware</b>: a rolling window is defined by "
     "row count, not elapsed time, so it can silently straddle a real outage if that outage is not removed "
     "upstream by hand, as it was here.",
     "<b>The Correlation module cannot distinguish real drift from noise-driven instability</b> in a "
-    "near-constant channel, as demonstrated directly by the co2 experiment above — a variance-floor guard "
+    "near-constant channel, as demonstrated directly by the co2 experiment above. A variance-floor guard "
     "would help, since floored/near-constant channels (a sensor at its detection limit, a valve permanently "
     "closed) are common in real IoT deployments.",
     "<b>temp2_c's physical location is undocumented</b> (soil, root zone, or elsewhere in the air).",
-    "Single device, single 5-day working block — no cross-device or cross-season comparison possible.",
+    "Single device, single 5-day working block; no cross-device or cross-season comparison possible.",
     "The Models path was exercised univariately (one channel at a time), not across multiple channels jointly.",
 ])
 
@@ -263,8 +263,8 @@ h2("Conclusions and Recommendations")
 p("This experiment provides further evidence that the Models/AIntl MVP generalises beyond its original "
   "NAB-derived development data to a second, independently-sourced, real IoT deployment with a materially "
   "different character: a strong daily periodicity, a live (not synthetic) sensor fault, and a genuinely "
-  "physically-linked pair of channels. Preprocessing required was light — fault-sentinel removal and block "
-  "selection, no imputation — and the full pipeline completed in well under two seconds for the whole usable "
+  "physically-linked pair of channels. Preprocessing required was light (fault-sentinel removal and block "
+  "selection, no imputation), and the full pipeline completed in well under two seconds for the whole usable "
   "block.")
 p("Recommended follow-ups, in priority order:")
 bullets([

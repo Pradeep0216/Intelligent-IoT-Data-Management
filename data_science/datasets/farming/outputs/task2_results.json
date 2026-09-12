@@ -1,0 +1,27 @@
+{
+  "n_rows": 7261,
+  "n_anomalies": 357,
+  "anomaly_pct": 4.916678143506404,
+  "models_runtime_s": 0.13439011573791504,
+  "outlier_overlap_pct": 100.0,
+  "deterministic": true,
+  "corr_alerts_temp_humidity": 178,
+  "corr_alerts_temp_co2": 258,
+  "corr_severity_temp_humidity": {
+    "HIGH": 46,
+    "MEDIUM": 65,
+    "LOW": 67
+  },
+  "corr_severity_temp_co2": {
+    "HIGH": 108,
+    "LOW": 76,
+    "MEDIUM": 74
+  },
+  "full_pipeline_alert_count": 535,
+  "full_pipeline_alert_types": {
+    "POINTWISE_ANOMALY": 357,
+    "CORRELATION_CHANGE": 178
+  },
+  "full_pipeline_wall_time_s": 1.3106367588043213,
+  "pearson_temp_humidity_overall": -0.5691873188925354
+}

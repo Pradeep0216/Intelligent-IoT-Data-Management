@@ -19,6 +19,7 @@
 - `notebook.ipynb`: the full reproducible investigation. Task 1 (dataset selection, field identification, timestamp/quality checks, correlation suitability) plus Task 2 (EDA, preprocessing, Models/AIntl execution, evaluation, visualisations, interpretation, limitations, conclusions). Runs top to bottom with no manual steps; every cell's output is already saved inside it.
 - `Smart_Farming_Models_AIntl_Evaluation_Report.pdf`: the professional summary report of Task 2's findings, for stakeholder/project review.
 - `make_report.py`: regenerates the PDF from `outputs/task2_results.json` and `outputs/*.png` (both produced by the notebook).
+- `quick_check.py`: a plain, runnable script that reproduces the preprocessing and one full-pipeline call, without needing the notebook or Jupyter. Run with `python data_science/datasets/farming/quick_check.py` from anywhere.
 - `data/farming.csv`: the raw ThingSpeak export (7,488 rows x 10 columns), unmodified.
 - `outputs/`: the results this experiment produced. `task2_results.json` (all headline numbers) and 7 charts (`.png`) covering the EDA distributions, flagged anomalies over time and by hour/date, rolling correlation, correlation severity, and runtime scaling. This is the evidence record the findings below and the PDF report are built from.
 
@@ -80,34 +81,10 @@ jupyter nbconvert --to notebook --execute --ExecutePreprocessor.kernel_name=farm
 
 or open it in Jupyter/VS Code (select the `farming312` kernel) and run all cells. It adds the repo root to `sys.path` itself, so it imports `data_science`, `analytics_integration`, and `correlation_alert` directly. To regenerate just the PDF afterwards, run `python make_report.py`.
 
-**Quick check (no notebook needed):** the same preprocessing and full-pipeline call, as a standalone script, from the repo root:
+**Quick check (no notebook needed):** `quick_check.py` runs the same preprocessing and full-pipeline call as a plain script. Run it from anywhere, once the environment above is set up:
 
-```python
-import pandas as pd
-from analytics_integration.pipeline import run_analytics_pipeline
-
-RENAMES = {"field1": "temp_c", "field2": "wet_bulb_c", "field3": "temp2_c",
-           "field4": "humidity_pct", "field5": "abs_humidity_gm3",
-           "field6": "dew_point_c", "field7": "humidity_deficit_gm3", "field8": "co2_ppm"}
-FAULT_SENTINELS = {99.9, 455.0, 9999.0, 0.0}
-
-df = pd.read_csv("data_science/datasets/farming/data/farming.csv").rename(columns=RENAMES)
-df["timestamp"] = pd.to_datetime(df["created_at"], format="mixed", utc=True)
-
-fault_mask = df[["temp_c", "humidity_pct", "co2_ppm"]].isin(FAULT_SENTINELS).any(axis=1)
-d = df["timestamp"].diff()
-block_id = (d > d.median() * 100).cumsum()
-main_block = block_id.value_counts().idxmax()
-main = df[(block_id == main_block) & ~fault_mask].sort_values("timestamp").reset_index(drop=True)
-main["timestamp"] = main["timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-response = run_analytics_pipeline(
-    df=main, timestamp_col="timestamp", entity_id="greenhouse_ch80502",
-    model_metric="temp_c", correlation_streams=["temp_c", "humidity_pct"],
-    detector_name="isolationforest", detector_parameters={"contamination": 0.05},
-    correlation_window_size=20, correlation_step_size=10, correlation_method="pearson",
-)
-print(response["summary"])
+```bash
+python data_science/datasets/farming/quick_check.py
 ```
 
-This reproduces the preprocessing (fault-sentinel removal plus block selection) and the full-pipeline run described above. Swap `correlation_streams` to `["temp_c", "co2_ppm"]` to reproduce the second correlation experiment.
+Expected output ends with `Pipeline summary: {'processed_items': 7261, 'alert_count': 535}`, matching the numbers in the Findings section above. Edit the `correlation_streams` argument inside the script to `["temp_c", "co2_ppm"]` to reproduce the second correlation experiment instead.

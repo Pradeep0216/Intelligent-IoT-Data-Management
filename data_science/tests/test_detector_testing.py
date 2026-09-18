@@ -54,13 +54,15 @@ def test_too_few_readings():
 
 
 def test_missing_values():
+    data = missing_values()
+
     result = tester.test_case(
         "missing_values",
-        missing_values()
+        data
     )
 
-    assert result["status"] == "failed"
-    assert "error" in result["result"]
+    assert result["status"] == "success"
+    assert len(result["result"]["anomaly_flag"]) == len(data)
 
 
 def test_invalid_values():
